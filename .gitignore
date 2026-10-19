@@ -1,0 +1,14 @@
+# Yuva runtime state must stay out of source control
+durum.json
+gorevler.json
+mesaj.jsonl
+ekran/
+ekran/*.jsonl
+.kilit
+.kalp-*.pid
+.kalp-*.lock
+.kalp-*.log
+.kalp-*.dur
+.kalp-*.saglik.json
+*.tmp
+__pycache__/

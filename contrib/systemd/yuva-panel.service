@@ -1,0 +1,16 @@
+[Unit]
+Description=Yuva local web panel
+
+[Service]
+Type=simple
+WorkingDirectory=%h/yuva
+Environment=YUVA_DIR=%h/yuva
+ExecStart=/usr/bin/python3 -u %h/yuva/panel/server.py --host 127.0.0.1 --port 8686
+Restart=on-failure
+RestartSec=2s
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target
