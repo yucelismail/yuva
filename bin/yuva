@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # 🪹 yuva — farklı CLI/oturumlardaki modellerin ortak çalışma alanı
 # Komutlar: baglan, kalp, kalp-dongu, ayril, ad, ekran, durum, katil, kimler,
-#           yaz, oku, gelen, tahta, gorev ekle|ata|al|teslim|denetle|iptal,
+#           yaz, oku, gelen, tahta, sorumlu, bas-denetci,
+#           gorev ekle|ata|al|teslim|denetle|iptal,
 #           liste, protokol, panel
 import argparse
 import contextlib
@@ -38,6 +39,7 @@ ROLLER = ("goreci", "isci", "denetci")
 ARACLAR = ("claude", "codex", "opencode", "diger")
 DURUM_AD = {
     "pending": "sırada", "assigned": "atandı",
+    "pending_gorevli_review": "görevli incelemesi",
     "pending_verification": "teslim✋", "verified": "onaylı✅",
     "pending_revision": "revize✎", "dropped": "iptal🗑",
 }
@@ -230,6 +232,75 @@ def durum_guncelle(fn):
         sonuc = fn(d)
         kaydet(STATE, d)
         return sonuc
+
+
+def sorumlu_dogrula(d, kimlik, sorumlu_kimlik, rol=None):
+    if sorumlu_kimlik in (None, ""):
+        return None, None
+    ks = d["kullanicilar"]
+    rol = rol or ks.get(kimlik, {}).get("rol", "isci")
+    hedef = coz_kimlik(sorumlu_kimlik, d)
+    if not hedef:
+        return None, f"bilinmeyen sorumlu kimliği: {sorumlu_kimlik}"
+    if hedef == kimlik:
+        return None, "kimlik kendisini sorumlu gösteremez"
+    hedef_v = ks[hedef]
+    hedef_rol = hedef_v.get("rol", "isci")
+    if rol in ("goreci", "isci") and hedef_rol == "denetci":
+        return hedef, None
+    if (rol == "denetci" and hedef_rol == "denetci"
+            and hedef_v.get("bas_denetci")):
+        return hedef, None
+    return None, "görevli/işçi denetçiye; denetçi yalnız baş denetçiye bağlanabilir"
+
+
+def kimlik_rol_gecis_dogrula(d, kimlik, yeni_rol, bas_denetci=False):
+    ks = d["kullanicilar"]
+    v = ks.get(kimlik, {})
+    eski_rol = v.get("rol", "isci")
+    if bas_denetci and yeni_rol != "denetci":
+        return "baş denetçi yalnız denetçi rolünde olabilir"
+    if yeni_rol != "denetci" and v.get("bas_denetci"):
+        return "baş denetçinin rolü değişmeden önce baş denetçilik kaldırılmalı"
+    baglilar = [k for k, x in ks.items() if x.get("sorumlu_kimlik") == kimlik]
+    if yeni_rol != "denetci" and baglilar:
+        return "ekip üyeleri bağlı; önce sorumlu bağlarını kaldırın veya yeniden atayın"
+    sorumlu = v.get("sorumlu_kimlik")
+    if sorumlu:
+        _, hata = sorumlu_dogrula(d, kimlik, sorumlu, rol=yeni_rol)
+        if hata:
+            return "mevcut sorumlu bağı yeni rolle geçersiz: " + hata
+    if eski_rol != "denetci" and yeni_rol == "denetci" and sorumlu:
+        return "denetçi yapılacak kimliğin önce sorumlu bağı kaldırılmalı"
+    return None
+
+
+def bas_denetci_ata(d, kimlik, etkin):
+    ks = d["kullanicilar"]
+    v = ks.get(kimlik)
+    if not v:
+        return "bilinmeyen kimlik"
+    if v.get("rol", "isci") != "denetci":
+        return "baş denetçi yalnız denetçi rolünden seçilebilir"
+    if etkin:
+        eskiler = [k for k, x in ks.items()
+                   if k != kimlik and x.get("bas_denetci")]
+        if eskiler:
+            for x in ks.values():
+                if (x.get("rol") == "denetci"
+                        and x.get("sorumlu_kimlik") in eskiler):
+                    x["sorumlu_kimlik"] = kimlik
+            for eski in eskiler:
+                ks[eski]["bas_denetci"] = False
+        v.pop("sorumlu_kimlik", None)
+        v["bas_denetci"] = True
+        return None
+    if v.get("bas_denetci"):
+        if any(k != kimlik and x.get("rol") == "denetci"
+               and x.get("sorumlu_kimlik") == kimlik for k, x in ks.items()):
+            return "baş denetçiye bağlı denetçiler var; önce onları yeniden atayın"
+        v["bas_denetci"] = False
+    return None
 
 
 def kullanici_dokun(ad):
@@ -979,6 +1050,12 @@ def baglan_geri_al(kimlik, panel):
 def cmd_baglan(a):
     kimlik = coz_kimlik(a.kimlik) or a.kimlik
     panel = panel_al(a.panel)
+    with kilit_tut():
+        mevcut = durum_oku()
+        if kimlik in mevcut["kullanicilar"]:
+            hata = kimlik_rol_gecis_dogrula(mevcut, kimlik, a.rol)
+            if hata:
+                raise VeriHatasi(hata)
     if a.kalp and not host_kontrol_var_mi():
         raise VeriHatasi(
             "kalp güvenli biçimde başlatılamadı: kullanıcı systemd yöneticisi "
@@ -1384,6 +1461,47 @@ def cmd_kimler(a):
               f"[{k.get('arac', '?')}] {renkli(ad, '90')} son: {(k.get('son_gorulme') or '?')[11:19]}{bd}")
 
 
+def cmd_sorumlu(a):
+    kimlik = coz_kimlik(a.kimlik)
+    if not kimlik:
+        raise VeriHatasi(f"bilinmeyen kimlik: {a.kimlik}")
+    hedef = None if a.kaldir else coz_kimlik(a.denetci)
+    if not a.kaldir and not hedef:
+        raise VeriHatasi(f"bilinmeyen denetçi: {a.denetci}")
+    with kilit_tut():
+        d = durum_oku()
+        if a.kaldir:
+            d["kullanicilar"][kimlik].pop("sorumlu_kimlik", None)
+        else:
+            hedef, hata = sorumlu_dogrula(d, kimlik, hedef)
+            if hata:
+                raise VeriHatasi(hata)
+            d["kullanicilar"][kimlik]["sorumlu_kimlik"] = hedef
+        kaydet(STATE, d)
+    print(f"✅ {kimlik}: sorumlu {hedef or 'kaldırıldı'}")
+
+
+def cmd_bas_denetci(a):
+    if bool(a.kaldir) == bool(a.kimlik):
+        raise VeriHatasi("bir denetçi kimliği verin veya yalnız --kaldir kullanın")
+    kimlik = None if a.kaldir else coz_kimlik(a.kimlik)
+    if not a.kaldir and not kimlik:
+        raise VeriHatasi(f"bilinmeyen kimlik: {a.kimlik}")
+    with kilit_tut():
+        d = durum_oku()
+        if a.kaldir:
+            kimlik = next((k for k, v in d["kullanicilar"].items()
+                           if v.get("bas_denetci")), None)
+            if not kimlik:
+                print("Baş denetçi atanmamış")
+                return
+        hata = bas_denetci_ata(d, kimlik, not a.kaldir)
+        if hata:
+            raise VeriHatasi(hata)
+        kaydet(STATE, d)
+    print(f"✅ baş denetçi {'kaldırıldı' if a.kaldir else 'atandı'}: {kimlik}")
+
+
 def msaj_satir(m, kimin):
     kd = kisi_renk(m["kimden"])
     kime = "" if m["kime"] == "@hepsi" else f" → {m['kime']}"
@@ -1457,13 +1575,35 @@ def cmd_gelen(a):
     if not benim:
         print("  (atanan görev yok)")
     if rol == "goreci":
+        ilk_kontrol = [g for g in gb["gorevler"]
+                       if g.get("durum") == "pending_gorevli_review"
+                       and g.get("gorevli_kimlik") == kimlik]
+        if ilk_kontrol:
+            print(renkli("── 🧰 İLK KONTROLÜ BEKLEYEN GÖREVLER ──", "1;33"))
+            for g in ilk_kontrol:
+                print(f"  #{g['id']} {g['baslik']}  (yuva gorev ilk-kontrol {g['id']} --onayla|--revize --from {kimlik})")
         bekleyen = [g for g in gb["gorevler"] if g["durum"] == "pending"]
         if bekleyen:
             print(renkli("── ⏳ SEN DAĞITICISIN: atamayı bekleyen görevler ──", "1;33"))
             for g in bekleyen:
                 print(f"  #{g['id']} {g['baslik']}  (yuva gorev ata {g['id']} <ad>)")
     if rol == "denetci":
-        kuyruk = [g for g in gb["gorevler"] if g["durum"] == "pending_verification"]
+        bas = bool(kisi.get("bas_denetci"))
+        kuyruk = [g for g in gb["gorevler"]
+                  if g["durum"] == "pending_verification"
+                  and (bas or not g.get("inceleyen_kimlik")
+                       or g.get("inceleyen_kimlik") == kimlik)]
+        if bas:
+            yukler = {}
+            for kisi_id, kisi_v in d["kullanicilar"].items():
+                if kisi_v.get("rol") == "denetci" and kisi_id != kimlik:
+                    yukler[kisi_id] = sum(
+                        1 for g in gb["gorevler"]
+                        if g["durum"] == "pending_verification"
+                        and g.get("inceleyen_kimlik") == kisi_id)
+            print(renkli("── 🔍 DENETÇİ İŞ YÜKÜ (bekleyen inceleme) ──", "1;90"))
+            for kisi_id, adet in sorted(yukler.items()):
+                print(f"  {goster_ad(kisi_id)} ({kisi_id}): {adet}")
         if kuyruk:
             print(renkli("── 🔍 SEN DENETÇİSİN: denetleme kuyruğu ──", "1;33"))
             for g in kuyruk:
@@ -1482,11 +1622,35 @@ def cmd_tahta(a):
     for g in gb["gorevler"]:
         d = DURUM_AD.get(g["durum"], g["durum"])
         renk = {"verified": "32", "pending_verification": "33",
+                "pending_gorevli_review": "35",
                 "pending_revision": "31", "assigned": "36",
                 "pending": "90", "dropped": "90"}.get(g["durum"], "0")
         print(f"  #{g['id']:>3} {renkli(f'{d:9}', renk)} "
               f"{renkli(g['kimden'], '90')}→{renkli(g.get('assignee') or '-', '90')} "
               f"{g['baslik']}")
+
+
+def kanonik_gorev_id(deger):
+    """Pozitif görev ID'sini yalnız kanonik ASCII ondalık biçimden al."""
+    if isinstance(deger, bool):
+        raise ValueError("boolean görev ID olamaz")
+    if isinstance(deger, int):
+        if deger < 1:
+            raise ValueError("görev ID pozitif olmalı")
+        return deger
+    if (not isinstance(deger, str) or not deger
+            or deger[0] not in "123456789"
+            or any(karakter not in "0123456789" for karakter in deger[1:])):
+        raise ValueError("kanonik pozitif tamsayı gerekli")
+    return int(deger)
+
+
+def gorev_id_arg(deger):
+    try:
+        return kanonik_gorev_id(deger)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(
+            "--ust-gorev başında sıfır/boşluk olmayan pozitif tamsayı olmalı") from e
 
 
 def gorev_yukle():
@@ -1502,6 +1666,13 @@ def gorev_yukle():
             raise VeriHatasi("gorevler.json: görev kaydı nesne olmalı")
         if "id" not in g:
             raise VeriHatasi("gorevler.json: görev kaydında 'id' yok")
+        if "ust_gorev_id" in g:
+            ust_id = g["ust_gorev_id"]
+            if (ust_id is not None
+                    and (isinstance(ust_id, bool) or not isinstance(ust_id, int)
+                         or ust_id < 1)):
+                raise VeriHatasi(
+                    f"gorevler.json: #{g.get('id')} 'ust_gorev_id' pozitif tamsayı veya null olmalı")
         for alan in ("baslik", "kimden", "durum"):
             if not isinstance(g.get(alan), str):
                 raise VeriHatasi(
@@ -1519,6 +1690,43 @@ def gorev_bul(gb, gid):
     return None
 
 
+def gorev_eslesmeleri(gb, gid):
+    """Kanonik ID'ye karşılık gelen kayıtları döndür; parent tekil olmalı."""
+    return [g for g in gb["gorevler"] if str(g["id"]) == str(gid)]
+
+
+def ust_gorev_dogrula(gb, ust_id, yeni_id):
+    """Parent'ın tekil olduğunu ve yeni kenarın döngü üretmediğini doğrula."""
+    if gorev_eslesmeleri(gb, yeni_id):
+        return "sonraki görev ID'si zaten kullanımda; gorevler.json siradaki değerini düzeltin"
+    if ust_id is None:
+        return None
+    eslesen = gorev_eslesmeleri(gb, ust_id)
+    if not eslesen:
+        return f"üst görev bulunamadı: #{ust_id}"
+    if len(eslesen) != 1:
+        return f"üst görev ID'si tekil değil: #{ust_id}"
+
+    gorulen = set()
+    gezilen_id = ust_id
+    while gezilen_id is not None:
+        if gezilen_id == yeni_id:
+            return "üst görev zinciri yeni görev ID'sine geri dönüyor; döngü reddedildi"
+        if gezilen_id in gorulen:
+            return "üst görev zincirinde mevcut döngü var; parent atanamaz"
+        gorulen.add(gezilen_id)
+        zincir = gorev_eslesmeleri(gb, gezilen_id)
+        if len(zincir) != 1:
+            if not zincir:
+                break  # Önceden bozuk, dışarıda kalan bir ileri referans.
+            return f"üst görev zincirindeki ID tekil değil: #{gezilen_id}"
+        kayit = zincir[0]
+        if "ust_gorev_id" not in kayit:
+            break  # Legacy görev; bilinen bir üst kenarı yok.
+        gezilen_id = kayit["ust_gorev_id"]
+    return None
+
+
 def gorev_olay_ekle(g, kimden, olay, not_metni=None):
     g["guncelleme"] = simdi()
     olaylar = g.setdefault("gecmis", [])
@@ -1529,9 +1737,11 @@ def gorev_olay_ekle(g, kimden, olay, not_metni=None):
 # Görev geçişleri (fail-closed; tümü gorev_guncelle kilidi altında):
 #   pending|pending_revision --al--> assigned (assignee varsa yalnız o)
 #   pending|assigned|pending_revision --ata--> assigned
-#   assigned --teslim(assignee)--> pending_verification
+#   assigned --teslim(assignee)--> pending_gorevli_review (gorevli_kimlik varsa)
+#   assigned --teslim(assignee)--> pending_verification (legacy, gorevli yoksa)
+#   pending_gorevli_review --ilk-kontrol(gorevli)--> pending_verification|pending_revision
 #   pending_verification --denetle--> verified|pending_revision
-#   pending|assigned|pending_revision|pending_verification --iptal--> dropped
+#   pending|assigned|pending_revision|pending_gorevli_review|pending_verification --iptal--> dropped
 #   verified|dropped terminal
 def gorev_guncelle(fn):
     """gorevler.json üzerinde kilitli oku-değiştir-yaz."""
@@ -1544,10 +1754,20 @@ def gorev_guncelle(fn):
 
 def cmd_gorev_ekle(a):
     ata = coz_kimlik(a.ata) or a.ata
+    ust_gorev_id = a.ust_gorev_id
 
     def _ekle(gb):
+        gorevli, hata = gorevli_kimligi_dogrula(a.gorevli, durum_oku())
+        if hata:
+            sys.exit(hata)
+        yeni_id = gb["siradaki"]
+        hata = ust_gorev_dogrula(gb, ust_gorev_id, yeni_id)
+        if hata:
+            sys.exit(hata)
         g = {"id": gb["siradaki"], "baslik": a.baslik, "detay": a.detay or "",
              "kimden": a.from_, "assignee": ata,
+             "gorevli_kimlik": gorevli,
+             "ust_gorev_id": ust_gorev_id,
              "durum": "assigned" if ata else "pending",
              "olusturma": simdi(), "guncelleme": simdi(), "gecmis": []}
         gb["siradaki"] += 1
@@ -1564,26 +1784,45 @@ def cmd_gorev_ekle(a):
 
 
 def cmd_gorev_ata(a):
-    kime = coz_kimlik(a.kime) or a.kime
-    if not kime:
-        sys.exit("Hedef kimlik boş olamaz")
-
+    kime = (coz_kimlik(a.kime) or a.kime) if a.kime else None
     def _ata(gb):
         g = gorev_bul(gb, a.id)
         if not g:
             sys.exit(f"Görev #{a.id} yok")
         durum = g.get("durum")
+        yeni_gorevli = None
+        if a.gorevli:
+            yeni_gorevli, hata = gorevli_kimligi_dogrula(a.gorevli, durum_oku())
+            if hata:
+                sys.exit(hata)
+        if durum == "pending_gorevli_review":
+            if kime:
+                sys.exit("ilk kontrol kuyruğunda assignee değişmez; yalnız --gorevli verin")
+            if not yeni_gorevli:
+                sys.exit("ilk kontrol kuyruğunda yalnız --gorevli ile inceleyen değiştirilebilir")
+            g["gorevli_kimlik"] = yeni_gorevli
+            gorev_olay_ekle(g, a.from_, "ilk kontrol görevlisi değiştirildi", yeni_gorevli)
+            return g, True, yeni_gorevli
         if durum not in ("pending", "assigned", "pending_revision"):
             sys.exit(
                 f"Geçersiz geçiş: görev #{a.id} durumu '{durum}'; "
                 "ata yalnız pending/assigned/pending_revision durumlarında yapılabilir")
+        if not kime:
+            sys.exit("bu durumdaki atama için hedef işçi kimliği (kime) gerekli")
         g["assignee"] = kime
+        if yeni_gorevli:
+            g["gorevli_kimlik"] = yeni_gorevli
         g["durum"] = "assigned"
         gorev_olay_ekle(g, a.from_, "atandı", a.not_)
-        return g
+        return g, False, yeni_gorevli
 
-    g = gorev_guncelle(_ata)
+    g, yalniz_gorevli, yeni_gorevli = gorev_guncelle(_ata)
     kullanici_dokun(a.from_)
+    if yalniz_gorevli:
+        mesaj_ekle(a.from_, f"🧰 #{g['id']} ({g['baslik']}) ilk kontrol görevlisi @{yeni_gorevli} oldu",
+                   kime=yeni_gorevli, tur="gorev")
+        print(f"✅ #{g['id']} ilk kontrol görevlisi → {goster_ad(yeni_gorevli)}")
+        return
     mesaj_ekle(a.from_, f"📋 #{g['id']} ({g['baslik']}) sana atandı"
                + (f" — {a.not_}" if a.not_ else ""), kime=kime, tur="gorev")
     print(f"✅ #{g['id']} → {goster_ad(kime)}")
@@ -1636,16 +1875,74 @@ def cmd_gorev_teslim(a):
             sys.exit(
                 f"Görev #{a.id} assignee '{assignee}'; teslim yalnız mevcut "
                 "assignee tarafından yapılabilir")
-        g["durum"] = "pending_verification"
+        durum = durum_oku()
+        goreci = durum["kullanicilar"].get(assignee, {})
+        denetci = goreci.get("sorumlu_kimlik")
+        if denetci and durum["kullanicilar"].get(denetci, {}).get("rol") == "denetci":
+            g["inceleyen_kimlik"] = denetci
+        else:
+            # Eski/bağı olmayan işler tüm denetçilerin ortak kuyruğunda kalır.
+            g.pop("inceleyen_kimlik", None)
+        if g.get("gorevli_kimlik"):
+            if durum["kullanicilar"].get(g["gorevli_kimlik"], {}).get("rol") != "goreci":
+                sys.exit("kayıtlı ilk kontrol görevlisi artık görevli rolünde değil; önce --gorevli ile yeniden ata")
+            g["durum"] = "pending_gorevli_review"
+        else:
+            g["durum"] = "pending_verification"
         gorev_olay_ekle(g, a.from_, "teslim edildi", a.not_)
         return g
 
     g = gorev_guncelle(_teslim)
     kullanici_dokun(a.from_)
-    mesaj_ekle(a.from_, f"📦 #{g['id']} ({g['baslik']}) teslim edildi → denetim bekliyor"
+    hedef = g.get("gorevli_kimlik") if g.get("durum") == "pending_gorevli_review" else "@hepsi"
+    kuyruk = "ilk kontrol bekliyor" if g.get("durum") == "pending_gorevli_review" else "denetim bekliyor"
+    mesaj_ekle(a.from_, f"📦 #{g['id']} ({g['baslik']}) teslim edildi → {kuyruk}"
                + (f" — {a.not_}" if a.not_ else ""),
-               kime="@hepsi", tur="rapor")
-    print(f"✅ #{g['id']} teslim edildi, denetçiye kuyruğa girdi")
+               kime=hedef, tur="rapor")
+    print(f"✅ #{g['id']} teslim edildi, {kuyruk}")
+
+
+def gorevli_kimligi_dogrula(kimlik, durum=None):
+    durum = durum or durum_oku()
+    if not kimlik:
+        return None, "yeni görev için --gorevli <kimlik> gerekli"
+    hedef = coz_kimlik(kimlik, durum)
+    if not hedef:
+        return None, f"bilinmeyen görevli kimliği: {kimlik}"
+    if durum["kullanicilar"].get(hedef, {}).get("rol") != "goreci":
+        return None, f"ilk kontrol ataması görevli rolü gerektirir: {hedef}"
+    return hedef, None
+
+
+def cmd_gorev_ilk_kontrol(a):
+    def _kontrol(gb):
+        g = gorev_bul(gb, a.id)
+        if not g:
+            sys.exit(f"Görev #{a.id} yok")
+        if g.get("durum") != "pending_gorevli_review":
+            sys.exit(f"Geçersiz geçiş: görev #{a.id} ilk kontrol kuyruğunda değil")
+        hedef = g.get("gorevli_kimlik")
+        kayit = durum_oku()
+        gorevli = kayit["kullanicilar"].get(a.from_, {})
+        if gorevli.get("rol") != "goreci" or a.from_ != hedef:
+            sys.exit(f"ilk kontrol yalnız kayıtlı görevli kimliğiyle yapılabilir: {hedef}")
+        if a.onayla == a.revize:
+            sys.exit("Tam olarak bir karar bayrağı gerekli: --onayla veya --revize")
+        if a.onayla:
+            g["durum"] = "pending_verification"
+            olay = "ilk kontrol onaylandı"
+        else:
+            g["durum"] = "pending_revision"
+            olay = "ilk kontrol revize istedi"
+        gorev_olay_ekle(g, a.from_, olay, a.not_)
+        return g, olay
+
+    g, olay = gorev_guncelle(_kontrol)
+    kullanici_dokun(a.from_)
+    mesaj_ekle(a.from_, f"🧰 #{g['id']} ({g['baslik']}) {olay}"
+               + (f" — {a.not_}" if a.not_ else ""),
+               kime=g.get("assignee") or "@hepsi", tur="denetim")
+    print(f"✅ #{g['id']} {olay}")
 
 
 def cmd_gorev_denetle(a):
@@ -1653,6 +1950,14 @@ def cmd_gorev_denetle(a):
         g = gorev_bul(gb, a.id)
         if not g:
             sys.exit(f"Görev #{a.id} yok")
+        durum_kayit = durum_oku()
+        denetci = durum_kayit["kullanicilar"].get(a.from_, {})
+        if denetci.get("rol") != "denetci":
+            sys.exit("denetleme yalnız denetçi rolündeki kimlik tarafından yapılabilir")
+        hedef_denetcisi = g.get("inceleyen_kimlik")
+        if (hedef_denetcisi and a.from_ != hedef_denetcisi
+                and not denetci.get("bas_denetci")):
+            sys.exit(f"görev incelemesi {hedef_denetcisi} kimliğine yönlendirilmiş")
         if a.onayla == a.revize:
             sys.exit(
                 "Tam olarak bir karar bayrağı gerekli: "
@@ -1801,6 +2106,18 @@ def main():
     s.add_argument("--panel")
     s.set_defaults(fn=cmd_kimler)
 
+    s = sub.add_parser("sorumlu", help="kimlik için denetçi ekip bağını ata/kaldır")
+    s.add_argument("kimlik")
+    sec = s.add_mutually_exclusive_group(required=True)
+    sec.add_argument("--ata", dest="denetci", help="denetçi kimliği")
+    sec.add_argument("--kaldir", action="store_true", help="mevcut bağı kaldır")
+    s.set_defaults(fn=cmd_sorumlu)
+
+    s = sub.add_parser("bas-denetci", help="baş denetçiyi ata/kaldır")
+    s.add_argument("kimlik", nargs="?")
+    s.add_argument("--kaldir", action="store_true")
+    s.set_defaults(fn=cmd_bas_denetci)
+
     s = sub.add_parser("yaz", help="yuvaya mesaj yaz")
     s.add_argument("metin")
     s.add_argument("--from", dest="from_", required=True)
@@ -1832,12 +2149,16 @@ def main():
     s.add_argument("--detay")
     s.add_argument("--from", dest="from_", required=True)
     s.add_argument("--ata")
+    s.add_argument("--gorevli", required=True, help="ilk kontrolü yapacak görevli kimliği")
+    s.add_argument("--ust-gorev", dest="ust_gorev_id", type=gorev_id_arg,
+                   help="var olan üst görevin IDsi; verilmezse yeni görev köktür")
     s.set_defaults(fn=cmd_gorev_ekle)
 
     for ad_, fn_, ekstra in [
-        ("ata", cmd_gorev_ata, ["kime"]),
+        ("ata", cmd_gorev_ata, []),
         ("al", cmd_gorev_al, []),
         ("teslim", cmd_gorev_teslim, []),
+        ("ilk-kontrol", cmd_gorev_ilk_kontrol, []),
         ("denetle", cmd_gorev_denetle, []),
         ("iptal", cmd_gorev_iptal, []),
     ]:
@@ -1847,7 +2168,13 @@ def main():
         s.add_argument("--not", dest="not_")
         if ekstra:
             s.add_argument(ekstra[0])
+        if ad_ == "ata":
+            s.add_argument("kime", nargs="?")
+            s.add_argument("--gorevli", help="ilk kontrol görevli ataması/değişikliği")
         if ad_ == "denetle":
+            s.add_argument("--onayla", action="store_true")
+            s.add_argument("--revize", action="store_true")
+        if ad_ == "ilk-kontrol":
             s.add_argument("--onayla", action="store_true")
             s.add_argument("--revize", action="store_true")
         s.set_defaults(fn=fn_)
@@ -1864,7 +2191,7 @@ def main():
     a = p.parse_args()
     # kimlik/ad çözümleme: --from/--to/--ata/--kime hem kimlik hem görünen ad kabul eder
     try:
-        for alan in ("from_", "to", "ata", "kime", "user"):
+        for alan in ("from_", "to", "ata", "gorevli", "kime", "user"):
             deger = getattr(a, alan, None)
             if isinstance(deger, str) and deger:
                 k = coz_kimlik(deger)

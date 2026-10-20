@@ -309,6 +309,79 @@ def benzersiz_ad(d, ad, haric=None):
     return f"{temel}-{i}"
 
 
+def sorumlu_dogrula(d, kimlik, sorumlu_kimlik, rol=None):
+    """sorumlu_kimlik kenarını rol kurallarına göre doğrula; (hedef, hata)."""
+    if sorumlu_kimlik in (None, ""):
+        return None, None
+    ks = d["kullanicilar"]
+    rol = rol or ks.get(kimlik, {}).get("rol", "isci")
+    hedef = coz(d, sorumlu_kimlik)
+    if not hedef:
+        return None, f"bilinmeyen sorumlu kimliği: {sorumlu_kimlik}"
+    if hedef == kimlik:
+        return None, "kimlik kendisini sorumlu gösteremez"
+    hedef_v = ks[hedef]
+    hedef_rol = hedef_v.get("rol", "isci")
+    if rol in ("goreci", "isci") and hedef_rol == "denetci":
+        return hedef, None
+    if (rol == "denetci" and hedef_rol == "denetci"
+            and hedef_v.get("bas_denetci")):
+        return hedef, None
+    return None, "görevli/işçi denetçiye; denetçi yalnız baş denetçiye bağlanabilir"
+
+
+def kimlik_rol_gecis_dogrula(d, kimlik, yeni_rol, bas_denetci=False):
+    """Rol değişikliği mevcut ekip/baş denetçi bağlarını sessizce bozamaz."""
+    ks = d["kullanicilar"]
+    v = ks.get(kimlik, {})
+    eski_rol = v.get("rol", "isci")
+    if bas_denetci and yeni_rol != "denetci":
+        return "baş denetçi yalnız denetçi rolünde olabilir"
+    if yeni_rol != "denetci" and v.get("bas_denetci"):
+        return "baş denetçinin rolü değişmeden önce baş denetçilik kaldırılmalı"
+    baglilar = [k for k, x in ks.items() if x.get("sorumlu_kimlik") == kimlik]
+    if yeni_rol != "denetci" and baglilar:
+        return "ekip üyeleri bağlı; önce sorumlu bağlarını kaldırın veya yeniden atayın"
+    sorumlu = v.get("sorumlu_kimlik")
+    if sorumlu:
+        hedef, hata = sorumlu_dogrula(d, kimlik, sorumlu, rol=yeni_rol)
+        if hata:
+            return "mevcut sorumlu bağı yeni rolle geçersiz: " + hata
+    if eski_rol != "denetci" and yeni_rol == "denetci" and sorumlu:
+        return "denetçi yapılacak kimliğin önce sorumlu bağı kaldırılmalı"
+    return None
+
+
+def bas_denetci_ata(d, kimlik, etkin):
+    """Tek etkin baş denetçiyi kilitli durum nesnesinde ata/kaldır."""
+    ks = d["kullanicilar"]
+    v = ks.get(kimlik)
+    if not v:
+        return "bilinmeyen kimlik"
+    if v.get("rol", "isci") != "denetci":
+        return "baş denetçi yalnız denetçi rolünden seçilebilir"
+    if etkin:
+        eskiler = [k for k, x in ks.items()
+                   if k != kimlik and x.get("bas_denetci")]
+        if eskiler:
+            # Inspector raporları baş denetçi değişiminde yeni başa taşınır.
+            for x in ks.values():
+                if (x.get("rol") == "denetci"
+                        and x.get("sorumlu_kimlik") in eskiler):
+                    x["sorumlu_kimlik"] = kimlik
+            for eski in eskiler:
+                ks[eski]["bas_denetci"] = False
+        v.pop("sorumlu_kimlik", None)
+        v["bas_denetci"] = True
+        return None
+    if v.get("bas_denetci"):
+        if any(k != kimlik and x.get("rol") == "denetci"
+               and x.get("sorumlu_kimlik") == kimlik for k, x in ks.items()):
+            return "baş denetçiye bağlı denetçiler var; önce onları yeniden atayın"
+        v["bas_denetci"] = False
+    return None
+
+
 def mesaj_ekle(kimden, metin, kime="@hepsi", tur="not", ad=None, kanal="sohbet"):
     m = {"id": uid(), "ts": simdi(), "kimden": kimden, "kime": kime or "@hepsi",
          "tur": tur if tur in TURLER else "not", "metin": metin,
@@ -377,6 +450,10 @@ def api_katil(g):
         d = durum_oku()
         v = d["kullanicilar"].get(kimlik)
         yeni = v is None
+        if not yeni:
+            hata = kimlik_rol_gecis_dogrula(d, kimlik, rol)
+            if hata:
+                return 409, {"ok": False, "hata": hata}
         if yeni:
             v = {"katilma": simdi()}
             d["kullanicilar"][kimlik] = v
@@ -462,13 +539,73 @@ def api_rol(g):
         if not k:
             return 400, {"ok": False, "hata": f"bilinmeyen kimlik: {kimlik}"}
         v = d["kullanicilar"][k]
+        bas_istegi = bool(g.get("bas_denetci")) and rol == "denetci"
+        hata = kimlik_rol_gecis_dogrula(d, k, rol, bas_denetci=bas_istegi)
+        if hata:
+            return 409, {"ok": False, "hata": hata}
         v["rol"] = rol
-        v["bas_denetci"] = bool(g.get("bas_denetci")) and rol == "denetci"
+        if bas_istegi:
+            hata = bas_denetci_ata(d, k, True)
+            if hata:
+                return 409, {"ok": False, "hata": hata}
+        elif v.get("bas_denetci"):
+            hata = bas_denetci_ata(d, k, False)
+            if hata:
+                return 409, {"ok": False, "hata": hata}
+        else:
+            v["bas_denetci"] = False
         durum_yaz(d)
         ek = " 🔍 BAŞ DENETÇİ" if v["bas_denetci"] else ""
         mesaj_ekle(k, f"🎖️ {adi(k, v)} artık {ROL_AD[rol]}{ek}", tur="durum", ad=adi(k, v))
     return 200, {"ok": True, "kimlik": k, "ad": adi(k, v), "rol": rol,
                  "bas_denetci": v["bas_denetci"]}
+
+
+def api_sorumlu(g):
+    """Açık ekip bağı yazımı. API loopback kaynak denetimi yapar ama kimlik doğrulamaz."""
+    kimlik = str(g.get("kimlik") or "").strip()
+    if not kimlik or "sorumlu_kimlik" not in g:
+        return 400, {"ok": False, "hata": "kimlik ve sorumlu_kimlik alanları gerekli"}
+    with KILIT, dosya_kilidi():
+        d = durum_oku()
+        k = coz(d, kimlik)
+        if not k:
+            return 400, {"ok": False, "hata": f"bilinmeyen kimlik: {kimlik}"}
+        v = d["kullanicilar"][k]
+        ham = g.get("sorumlu_kimlik")
+        if ham is None or ham == "":
+            v.pop("sorumlu_kimlik", None)
+        else:
+            hedef, hata = sorumlu_dogrula(d, k, str(ham).strip())
+            if hata:
+                return 400, {"ok": False, "hata": hata}
+            v["sorumlu_kimlik"] = hedef
+        durum_yaz(d)
+        sonuc = v.get("sorumlu_kimlik")
+    return 200, {"ok": True, "kimlik": k, "sorumlu_kimlik": sonuc}
+
+
+def api_bas_denetci(g):
+    """Tek baş denetçiyi ata/kaldır; `etkin` JSON boolean olmalıdır.
+
+    Uçta kullanıcı kimlik doğrulaması yoktur; loopback filtresi yetki kanıtı değildir.
+    """
+    kimlik = str(g.get("kimlik") or "").strip()
+    etkin = g.get("etkin")
+    if not kimlik or not isinstance(etkin, bool):
+        return 400, {"ok": False, "hata": "kimlik ve boolean etkin alanları gerekli"}
+    with KILIT, dosya_kilidi():
+        d = durum_oku()
+        k = coz(d, kimlik)
+        if not k:
+            return 400, {"ok": False, "hata": f"bilinmeyen kimlik: {kimlik}"}
+        hata = bas_denetci_ata(d, k, etkin)
+        if hata:
+            return 409, {"ok": False, "hata": hata}
+        durum_yaz(d)
+        secili = next((x for x, v in d["kullanicilar"].items()
+                       if v.get("bas_denetci")), None)
+    return 200, {"ok": True, "bas_denetci": secili}
 
 
 def api_yaz(g):
@@ -529,6 +666,21 @@ def api_not(g):
     return 200, {"ok": True, "kimlik": k}
 
 
+def ust_gorev_id_coz(deger):
+    """API parent ID'sini kanonik pozitif int'e dönüştür; whitespace'i reddet."""
+    if isinstance(deger, bool):
+        raise ValueError("boolean görev ID olamaz")
+    if isinstance(deger, int):
+        if deger < 1:
+            raise ValueError("görev ID pozitif olmalı")
+        return deger
+    if (not isinstance(deger, str) or not deger
+            or deger[0] not in "123456789"
+            or any(karakter not in "0123456789" for karakter in deger[1:])):
+        raise ValueError("kanonik pozitif tamsayı gerekli")
+    return int(deger)
+
+
 def gorev_calistir(g):
     """Görev mantığı tek yerde (bin/yuva) yaşar; burada yalnız köprü var.
 
@@ -538,13 +690,20 @@ def gorev_calistir(g):
     köprüsü kilitsiz çalışır; dosya tutarlılığı CLI'nin kendi yazma sırasına aittir.
     """
     islem = str(g.get("islem") or "").strip()
-    if islem not in ("ekle", "ata", "al", "teslim", "denetle", "iptal"):
+    if islem not in ("ekle", "ata", "al", "teslim", "ilk-kontrol", "denetle", "iptal"):
         return 400, {"ok": False, "hata": f"geçersiz işlem: {islem}"}
+    if islem != "ekle" and "ust_gorev_id" in g:
+        return 400, {"ok": False,
+                     "hata": "ust_gorev_id yalnız ekle işleminde kullanılabilir"}
     # Fail-closed denetim kararı: 'revize' alanı ZORUNLU ve JSON boolean olmalı.
     # Eksik/yanlış tipte sessizce "--onayla"ya düşmek (fail-open) kaldırıldı.
     if islem == "denetle" and not isinstance(g.get("revize"), bool):
         return 400, {"ok": False,
                      "hata": "denetle için 'revize' alanı JSON boolean olmalı "
+                             "(true=revize iste, false=onayla)"}
+    if islem == "ilk-kontrol" and not isinstance(g.get("revize"), bool):
+        return 400, {"ok": False,
+                     "hata": "ilk-kontrol için 'revize' alanı JSON boolean olmalı "
                              "(true=revize iste, false=onayla)"}
     if not CLI.exists():
         return 500, {"ok": False, "hata": f"CLI bulunamadı: {CLI}"}
@@ -552,21 +711,35 @@ def gorev_calistir(g):
     if islem == "ekle":
         if not g.get("baslik"):
             return 400, {"ok": False, "hata": "baslik gerekli"}
+        if not g.get("gorevli"):
+            return 400, {"ok": False, "hata": "yeni görev için gorevli gerekli"}
+        ust_gorev_id = None
+        if "ust_gorev_id" in g and g["ust_gorev_id"] is not None:
+            try:
+                ust_gorev_id = ust_gorev_id_coz(g["ust_gorev_id"])
+            except ValueError:
+                return 400, {"ok": False,
+                             "hata": "ust_gorev_id boşluksuz kanonik pozitif tamsayı olmalı; kök görev için null kullanın"}
         args.append(str(g["baslik"]))
         if g.get("detay"):
             args += ["--detay", str(g["detay"])]
         if g.get("ata"):
             args += ["--ata", str(g["ata"])]
+        args += ["--gorevli", str(g["gorevli"])]
+        if ust_gorev_id is not None:
+            args += ["--ust-gorev", str(ust_gorev_id)]
     else:
         if not g.get("id"):
             return 400, {"ok": False, "hata": "id gerekli"}
         args.append(str(g["id"]))
         if islem == "ata" and g.get("kime"):
             args.append(str(g["kime"]))
+        if islem == "ata" and g.get("gorevli"):
+            args += ["--gorevli", str(g["gorevli"])]
     args += ["--from", str(g.get("kimden") or "kullanici")]
     if g.get("not_"):
         args += ["--not", str(g["not_"])]
-    if islem == "denetle":
+    if islem in ("denetle", "ilk-kontrol"):
         # buraya yalnız doğrulanmış boolean ile gelinir (yukarıdaki 400 kapısı)
         args.append("--revize" if g["revize"] else "--onayla")
     env = dict(os.environ)
@@ -587,6 +760,8 @@ UCLAR = {
     "/api/ayril": api_ayril,
     "/api/ad": api_ad,
     "/api/rol": api_rol,
+    "/api/sorumlu": api_sorumlu,
+    "/api/bas-denetci": api_bas_denetci,
     "/api/yaz": api_yaz,
     "/api/ekran": api_ekran,
     "/api/not": api_not,
@@ -612,6 +787,7 @@ def veri():
                 "arac": v.get("arac", "diger"),
                 "rol": v.get("rol", "isci"),
                 "bas_denetci": bool(v.get("bas_denetci")),
+                "sorumlu_kimlik": v.get("sorumlu_kimlik"),
                 "katilma": v.get("katilma"),
                 "son_gorulme": v.get("son_gorulme"),
                 "son_kalp": v.get("son_kalp"),

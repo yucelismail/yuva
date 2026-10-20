@@ -201,9 +201,12 @@ protokolü geliştirilip gerçek süreçlerle doğrulanmalıdır.
    tamamlandıktan sonra da eski sürüm açılana kadar yazımları dondurulmuş tutun.
 3. CLI symlink'ini ve panel servis komutunu eski kaynak ağacına döndürün.
    Örnek `yuva-panel.service` kullanılıyorsa `ExecStart` değerini eski
-   `panel/server.py` yoluna alın; aynı veri kökü kullanılacaksa
-   `Environment=YUVA_DIR=...` değerini koruyun. Sonra aşağıdaki komutlarla
-   unit'i yeniden yükleyip başlatın ve çıktıyı doğrulayın:
+   `panel/server.py` yoluna alın. Eski sürümü başlatmadan önce hedef sürümün
+   candidate'ın ürettiği JSON şemasını desteklediğini ve aynı `YUVA_DIR` veri
+   kökünü okuyup yazabildiğini doğrulayın. Doğrulanamıyorsa aynı veri kökünü
+   eski sürüme bağlamayın; uyumlu bir yedek veya açık bir veri geçişi kullanın.
+   Uyumluluk doğrulandıysa `Environment=YUVA_DIR=...` değerini koruyun. Sonra
+   aşağıdaki komutlarla unit'i yeniden yükleyip başlatın ve çıktıyı doğrulayın:
 
    ```bash
    systemctl --user daemon-reload
@@ -211,8 +214,6 @@ protokolü geliştirilip gerçek süreçlerle doğrulanmalıdır.
    systemctl --user status yuva-panel.service
    journalctl --user -u yuva-panel.service -n 50
    ```
-
-   Veri biçimi korunuyorsa mevcut veri kökünü kullanın.
 4. Yedeği yalnızca veri bozulması varsa geri yükleyin. Yedek sonrasında gelen
    mesaj ve görev değişikliklerini incelemeden üzerine yazmayın.
 5. Eski panel ve CLI'yi açtıktan sonra önce bir canary modelle doğrulayın;

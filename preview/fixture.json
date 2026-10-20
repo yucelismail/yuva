@@ -1,0 +1,1155 @@
+{
+  "ok": true,
+  "rev": 44,
+  "kullanicilar": {
+    "demo-goreci": {
+      "ad": "Örnek Görevli",
+      "arac": "codex",
+      "rol": "goreci",
+      "sorumlu_kimlik": "demo-denetci",
+      "online": true,
+      "bagli": true,
+      "bas_denetci": false,
+      "son_kalp": "2026-10-19T23:48:30+03:00",
+      "son_gorulme": "2026-10-19T23:48:30+03:00",
+      "son_okuma": "2026-10-19T23:48:00+03:00"
+    },
+    "demo-isci-online": {
+      "ad": "Örnek İşçi A",
+      "arac": "claude",
+      "rol": "isci",
+      "sorumlu_kimlik": "demo-denetci",
+      "online": true,
+      "bagli": true,
+      "bas_denetci": false,
+      "son_kalp": "2026-10-19T23:48:25+03:00",
+      "son_gorulme": "2026-10-19T23:48:25+03:00",
+      "son_okuma": "2026-10-19T23:47:30+03:00"
+    },
+    "demo-isci-offline": {
+      "ad": "Örnek İşçi B",
+      "arac": "opencode",
+      "rol": "isci",
+      "sorumlu_kimlik": "demo-denetci",
+      "online": false,
+      "bagli": false,
+      "bas_denetci": false,
+      "son_kalp": "2026-10-19T21:12:00+03:00",
+      "son_gorulme": "2026-10-19T21:14:00+03:00",
+      "son_okuma": "2026-10-19T21:00:00+03:00"
+    },
+    "demo-denetci": {
+      "ad": "Örnek Denetçi",
+      "arac": "codex",
+      "rol": "denetci",
+      "online": true,
+      "bagli": true,
+      "bas_denetci": true,
+      "son_kalp": "2026-10-19T23:48:18+03:00",
+      "son_gorulme": "2026-10-19T23:48:18+03:00",
+      "son_okuma": "2026-10-19T23:47:00+03:00"
+    },
+    "demo-denetci-yardimci": {
+      "ad": "Örnek Bağlı Denetçi",
+      "arac": "claude",
+      "rol": "denetci",
+      "sorumlu_kimlik": "demo-denetci",
+      "online": true,
+      "bagli": true,
+      "bas_denetci": false,
+      "son_kalp": "2026-10-19T23:48:10+03:00",
+      "son_gorulme": "2026-10-19T23:48:10+03:00",
+      "son_okuma": "2026-10-19T23:47:10+03:00"
+    },
+    "demo-isci-yardimci-ekip": {
+      "ad": "Örnek Bağlı Ekip İşçisi",
+      "arac": "opencode",
+      "rol": "isci",
+      "sorumlu_kimlik": "demo-denetci-yardimci",
+      "online": true,
+      "bagli": true,
+      "bas_denetci": false,
+      "son_kalp": "2026-10-19T23:47:50+03:00",
+      "son_gorulme": "2026-10-19T23:47:50+03:00",
+      "son_okuma": "2026-10-19T23:46:50+03:00"
+    }
+  },
+  "gorevler": [
+    {
+      "id": 301,
+      "baslik": "Önizleme: sırada ve atama bekliyor",
+      "kimden": "demo-goreci",
+      "assignee": "",
+      "durum": "pending",
+      "ust_gorev_id": null
+    },
+    {
+      "id": 302,
+      "baslik": "Önizleme: atanmış görev bağlantısı",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "assigned",
+      "ust_gorev_id": 301
+    },
+    {
+      "id": 303,
+      "baslik": "Önizleme: denetim kuyruğunda",
+      "kimden": "demo-isci-online",
+      "assignee": "demo-denetci",
+      "durum": "pending_verification",
+      "ust_gorev_id": 301
+    },
+    {
+      "id": 304,
+      "baslik": "Önizleme: revizyon çevrimdışı işçide",
+      "kimden": "demo-denetci",
+      "assignee": "demo-isci-offline",
+      "durum": "pending_revision"
+    },
+    {
+      "id": 305,
+      "baslik": "Önizleme: onaylı arşiv görevi",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 306,
+      "baslik": "Önizleme: iptal edilmiş görev",
+      "kimden": "demo-denetci",
+      "assignee": "demo-isci-offline",
+      "durum": "dropped"
+    },
+    {
+      "id": 307,
+      "baslik": "Önizleme: bilinmeyen durum ve çözümlenmeyen kimlik",
+      "kimden": "demo-goreci",
+      "assignee": "demo-olmayan-kimlik",
+      "durum": "blocked_preview"
+    },
+    {
+      "id": 308,
+      "baslik": "Önizleme: revizyon kuyruğunda atanmamış görev",
+      "kimden": "demo-denetci",
+      "assignee": "",
+      "durum": "pending_revision"
+    },
+    {
+      "id": 309,
+      "baslik": "Önizleme: görevli ilk kontrolünde",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "gorevli_kimlik": "demo-goreci",
+      "durum": "pending_gorevli_review"
+    },
+    {
+      "id": 400,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 001",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 401,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 002",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 402,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 003",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 403,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 004",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 404,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 005",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 405,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 006",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 406,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 007",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 407,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 008",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 408,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 009",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 409,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 010",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 410,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 011",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 411,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 012",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 412,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 013",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 413,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 014",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 414,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 015",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 415,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 016",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 416,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 017",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 417,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 018",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 418,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 019",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 419,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 020",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 420,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 021",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 421,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 022",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 422,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 023",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 423,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 024",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 424,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 025",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 425,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 026",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 426,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 027",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 427,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 028",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 428,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 029",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 429,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 030",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 430,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 031",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 431,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 032",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 432,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 033",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 433,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 034",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 434,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 035",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 435,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 036",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 436,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 037",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 437,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 038",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 438,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 039",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 439,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 040",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 440,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 041",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 441,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 042",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 442,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 043",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 443,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 044",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 444,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 045",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 445,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 046",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 446,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 047",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 447,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 048",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 448,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 049",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 449,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 050",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 450,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 051",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 451,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 052",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 452,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 053",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 453,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 054",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 454,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 055",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 455,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 056",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 456,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 057",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 457,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 058",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 458,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 059",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 459,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 060",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 460,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 061",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 461,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 062",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 462,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 063",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 463,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 064",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 464,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 065",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 465,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 066",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 466,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 067",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 467,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 068",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 468,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 069",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 469,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 070",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 470,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 071",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 471,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 072",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 472,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 073",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 473,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 074",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 474,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 075",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 475,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 076",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 476,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 077",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 477,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 078",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 478,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 079",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 479,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 080",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 480,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 081",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 481,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 082",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 482,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 083",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 483,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 084",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 484,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 085",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 485,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 086",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 486,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 087",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 487,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 088",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 488,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 089",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 489,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 090",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 490,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 091",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 491,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 092",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 492,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 093",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 493,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 094",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 494,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 095",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 495,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 096",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 496,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 097",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 497,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 098",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 498,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 099",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 499,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 100",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 500,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 101",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 501,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 102",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 502,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 103",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 503,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 104",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 504,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 105",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 505,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 106",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 506,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 107",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 507,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 108",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 508,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 109",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 509,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 110",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 510,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 111",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 511,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 112",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 512,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 113",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 513,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 114",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 514,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 115",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 515,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 116",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 516,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 117",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 517,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 118",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 518,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 119",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified"
+    },
+    {
+      "id": 519,
+      "baslik": "Önizleme: sentetik onaylı arşiv görevi 120",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "verified"
+    },
+    {
+      "id": 310,
+      "baslik": "Önizleme: bulunamayan üst görev bağlantısı",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "assigned",
+      "ust_gorev_id": 999
+    },
+    {
+      "id": 311,
+      "baslik": "Önizleme: boş üst görev kimliği uyarısı",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "assigned",
+      "ust_gorev_id": ""
+    },
+    {
+      "id": 312,
+      "baslik": "Önizleme: ikinci açık kök akışı",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-offline",
+      "durum": "pending_revision",
+      "ust_gorev_id": null
+    },
+    {
+      "id": 313,
+      "baslik": "Önizleme: tamamlanmış kök akışı",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified",
+      "ust_gorev_id": null
+    },
+    {
+      "id": 314,
+      "baslik": "Önizleme: tamamlanmış alt görev",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "verified",
+      "ust_gorev_id": 301
+    },
+    {
+      "id": 600,
+      "baslik": "Önizleme: altı çocuklu, çok satırlı akış",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "pending",
+      "ust_gorev_id": null
+    },
+    {
+      "id": 601,
+      "baslik": "Fanout dalı 1: uzun içerik hizalama kontrolü",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "assigned",
+      "ust_gorev_id": 600
+    },
+    {
+      "id": 602,
+      "baslik": "Fanout dalı 2: uzun içerik hizalama kontrolü",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "pending_gorevli_review",
+      "ust_gorev_id": 600
+    },
+    {
+      "id": 603,
+      "baslik": "Fanout dalı 3: uzun içerik hizalama kontrolü",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "pending_verification",
+      "ust_gorev_id": 600
+    },
+    {
+      "id": 604,
+      "baslik": "Fanout dalı 4: uzun içerik hizalama kontrolü",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "pending_revision",
+      "ust_gorev_id": 600
+    },
+    {
+      "id": 605,
+      "baslik": "Fanout dalı 5: uzun içerik hizalama kontrolü",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "pending",
+      "ust_gorev_id": 600
+    },
+    {
+      "id": 606,
+      "baslik": "Fanout dalı 6: uzun içerik hizalama kontrolü",
+      "kimden": "demo-goreci",
+      "assignee": "demo-isci-online",
+      "durum": "assigned",
+      "ust_gorev_id": 600
+    }
+  ],
+  "mesajlar": [
+    {
+      "id": "preview-message-1",
+      "ts": "2026-10-19T23:46:00+03:00",
+      "kimden": "kullanici",
+      "ad": "Kullanıcı",
+      "kime": "@hepsi",
+      "tur": "not",
+      "metin": "Bu sohbet satırı yalnızca statik önizleme verisidir."
+    },
+    {
+      "id": "preview-message-2",
+      "ts": "2026-10-19T23:47:00+03:00",
+      "kimden": "demo-isci-online",
+      "ad": "Örnek İşçi A",
+      "kime": "@Örnek Görevli",
+      "tur": "cevap",
+      "metin": "Ekip, tahta ve harita kartları için sentetik fixture yüklendi."
+    },
+    {
+      "id": "preview-message-3",
+      "ts": "2026-10-19T23:48:00+03:00",
+      "kimden": "demo-denetci",
+      "ad": "Örnek Denetçi",
+      "kime": "@demo-isci-offline",
+      "tur": "soru",
+      "metin": "Bu mesaj da okunmamış/durum rozeti görünümünü örnekler."
+    }
+  ],
+  "ekranlar": {
+    "demo-goreci": [
+      {
+        "ts": "2026-10-19T23:44:00+03:00",
+        "kimlik": "demo-goreci",
+        "ad": "Örnek Görevli",
+        "tur": "baslik",
+        "satir": "Fixture görev listesi"
+      },
+      {
+        "ts": "2026-10-19T23:44:10+03:00",
+        "kimlik": "demo-goreci",
+        "ad": "Örnek Görevli",
+        "tur": "komut",
+        "satir": "yuva tahta --ornek"
+      },
+      {
+        "ts": "2026-10-19T23:44:11+03:00",
+        "kimlik": "demo-goreci",
+        "ad": "Örnek Görevli",
+        "tur": "sonuc",
+        "satir": "7 sentetik görev"
+      }
+    ],
+    "demo-isci-online": [
+      {
+        "ts": "2026-10-19T23:45:00+03:00",
+        "kimlik": "demo-isci-online",
+        "ad": "Örnek İşçi A",
+        "tur": "ekran",
+        "satir": "Harita bağlantı çizgileri örnekleniyor."
+      }
+    ],
+    "demo-isci-offline": [],
+    "demo-denetci": [
+      {
+        "ts": "2026-10-19T23:46:00+03:00",
+        "kimlik": "demo-denetci",
+        "ad": "Örnek Denetçi",
+        "tur": "sonuc",
+        "satir": "Önizleme hazır."
+      }
+    ]
+  }
+}

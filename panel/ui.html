@@ -17,6 +17,11 @@ header h1{font-size:16px;white-space:nowrap}
 #serit{background:#3d1d1d;color:#ffb4ab;font-size:12px;padding:5px 14px;border-bottom:1px solid var(--brd)}
 .gizli{display:none!important}
 main{display:grid;grid-template-columns:minmax(330px,1fr) minmax(460px,1.35fr);min-height:0;overflow:hidden}
+body.harita-tam main{grid-template-columns:minmax(0,1fr)}
+body.harita-tam #sol{display:none}
+body.harita-tam #sag{grid-template-rows:auto minmax(0,1fr)}
+body.harita-tam #sekmeler{grid-row:1}
+body.harita-tam #b-harita{grid-row:2;min-height:0}
 #sol{display:grid;grid-template-rows:auto auto 1fr auto;border-right:1px solid var(--brd);min-height:0}
 .baslik{font-size:12px;color:var(--dim);padding:7px 14px;border-bottom:1px solid var(--brd);
 display:flex;gap:8px;align-items:center}
@@ -45,12 +50,234 @@ select option{background:var(--pnl2);color:var(--fg)}
 textarea{resize:vertical;min-height:38px}
 button{cursor:pointer;background:var(--pnl2)}
 button:hover{border-color:var(--dim)}
+button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible{
+outline:2px solid #79c0ff;outline-offset:2px}
 button.ana{background:#1f6feb;border-color:#1f6feb;color:#fff}
 #sag{display:grid;grid-template-rows:auto 1fr;min-height:0}
-#sekmeler{display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--brd);background:var(--pnl)}
+#sekmeler{display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--brd);background:var(--pnl);overflow-x:auto}
 .sekme{border-radius:8px;font-size:13px}
 .sekme.aktif{background:var(--pnl2);border-color:var(--dim)}
 .bolum{overflow-y:auto;padding:12px;min-height:0}
+#b-harita{padding:0;overflow:hidden}
+.harita-kaydir{height:100%;min-height:0;overflow:auto;padding:14px;overscroll-behavior:contain;
+ cursor:grab;touch-action:pan-x pan-y pinch-zoom}
+.harita-kaydir[role="region"]:focus-visible{outline:2px solid #79c0ff;outline-offset:-2px}
+.harita-kaydir.surukleniyor{cursor:grabbing;user-select:none}
+.harita-kaydir.surukleniyor *{cursor:grabbing!important}
+.harita-yuzey{position:relative;width:100%;min-width:0;min-height:100%;padding:5px}
+.harita-baglar{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:1}
+.harita-oklar{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:4}
+.harita-ok-hedef{stroke:#0d1117;stroke-width:1.5;opacity:.98;
+ filter:drop-shadow(0 1px 2px #000b)}
+.harita-ok-hedef.baglanti-vurgulu{stroke:#fff;stroke-width:2.5;opacity:1}
+.harita-ok-hedef.secili{stroke-width:2.5;opacity:1}
+.harita-icerik{position:relative}
+.harita-baslik{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 10px}
+.harita-baslik h2{font-size:14px}
+.harita-baslik .ipucu{color:#c9d1d9;font-size:12px;opacity:1}
+.harita-uyari{margin-bottom:10px;padding:7px 10px;border:1px solid var(--warn);border-radius:7px;
+ background:#2b2210;color:#f0c674;font-size:12px}
+.harita-bolum-baslik{font-size:12px;color:var(--dim);margin:12px 0 7px}
+.harita-katman{position:relative;z-index:2;margin:0 0 28px;padding:8px;border:1px solid var(--brd);border-radius:9px;background:#0f141b}
+.harita-katman-etiket{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+ clip:rect(0,0,0,0);clip-path:inset(50%);white-space:nowrap;border:0}
+.harita-katman-kisiler{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;min-width:0;width:100%}
+.harita-ekipler{display:grid;gap:14px;margin:0 0 28px}
+.harita-ekip{--ekip-renk:#8b949e;position:relative;z-index:2;padding:10px;border:1px solid var(--brd);
+ border-left:3px solid var(--ekip-renk);border-radius:9px;background:#0f141b}
+.harita-ekip.secili{box-shadow:0 0 0 2px var(--ekip-renk)}
+.harita-ekip-baslik{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 9px;color:#e6edf3;font-size:12px}
+.harita-ekip-baslik small{color:var(--dim);font-size:10px;font-weight:normal}
+.harita-ekip-roller{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.harita-ekip-rol h4{margin:0 0 6px;color:var(--dim);font-size:11px}
+.harita-ekip-rol .harita-katman-kisiler{justify-content:flex-start}
+.harita-kisi.ekip-uyesi{border-left:3px solid var(--ekip-renk)}
+.harita-kisi.denetcisi-secili{outline:2px solid var(--ekip-renk);outline-offset:2px}
+.harita-kisi.ekip-vurgulu{box-shadow:0 0 0 2px var(--ekip-renk),0 5px 14px #0005}
+.harita-yuzey.ekip-secimi .harita-ekip:not(.secili),
+.harita-yuzey.ekip-secimi .harita-atanmamis,
+.harita-yuzey.ekip-secimi .harita-kisi[data-h-kisi]:not(.denetcisi-secili):not(.ekip-vurgulu){opacity:.48}
+.harita-kume-rozet{display:inline-flex;align-items:center;gap:4px;padding:1px 6px;border:1px solid var(--ekip-renk);
+ border-radius:10px;color:#e6edf3;font-size:10px;white-space:nowrap}
+.harita-kume-rozet.bas-denetci-rozet{border-color:var(--denetci);color:#e6ccff}
+.harita-atanmamis{padding:10px;border:1px dashed var(--brd);border-radius:9px;background:#0f141b}
+.harita-atanmamis>h3{margin:0 0 8px;color:#c9d1d9;font-size:12px}
+.harita-hiyerarsi{fill:none;stroke-width:2;stroke-dasharray:2 5;stroke-linecap:round;opacity:.9}
+.harita-hiyerarsi.secili{stroke-width:3;opacity:1}
+.harita-hiyerarsi-ucu{fill:#0f141b;stroke-width:2}
+.harita-efsane-item .harita-hiyerarsi-ornek{position:relative;display:inline-block;width:24px;height:0;
+ border-top:2px dotted #d2a8ff}
+.harita-efsane-item .harita-hiyerarsi-ornek::after{content:"●";position:absolute;right:-2px;top:-8px;
+ color:#d2a8ff;font-size:12px;line-height:12px}
+.harita-kisi,.harita-gorev{position:relative;background:var(--pnl);border:1px solid var(--brd);
+ border-radius:9px;padding:9px 10px;box-shadow:0 5px 14px #0005}
+.harita-kisi{width:min(100%,280px);flex:0 1 280px;min-height:96px;border-top:2px solid var(--dim)}
+.harita-kisi[data-h-isci]{cursor:pointer}
+.harita-kisi[data-h-denetci]{cursor:pointer}
+.harita-kisi[data-h-isci]:hover{border-color:#79c0ff;box-shadow:0 0 0 1px #79c0ff55,0 5px 14px #0005}
+.harita-kisi[data-h-isci]:focus-visible{outline:2px solid #79c0ff;outline-offset:2px}
+.harita-kisi[data-h-denetci]:hover{border-color:#d2a8ff;box-shadow:0 0 0 1px #d2a8ff55,0 5px 14px #0005}
+.harita-kisi[data-h-denetci]:focus-visible{outline:2px solid #d2a8ff;outline-offset:2px}
+.harita-kisi-etkinlik{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+.harita-etkinlik{display:inline-flex;border:1px solid var(--brd);border-radius:10px;padding:1px 6px;
+ color:#c9d1d9;font-size:10px}
+.harita-etkinlik.alinan{border-color:#1f6feb;color:#79c0ff}
+.harita-etkinlik.kontrol{border-color:#d2a8ff;color:#e6ccff}
+.harita-etkinlik.teslim{border-color:#9e6a03;color:#f0c674}
+.harita-etkinlik.revize{border-color:#da3633;color:#ffb4ab}
+.harita-kisi.online{border-top-color:var(--ok)}
+.harita-kisi.offline{border-top-color:#8b949e}
+.harita-kisi.belirsiz{border-top-color:var(--warn)}
+.harita-kisi-ust{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.harita-kisi-ad{font-size:13px;font-weight:bold;overflow-wrap:anywhere}
+.harita-kimlik{display:block;color:#b1bac4;font-size:10px;overflow-wrap:anywhere;margin-top:2px}
+.harita-rozet{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--brd);
+ border-radius:12px;padding:1px 6px;font-size:10px;color:var(--fg)}
+.harita-rozet.online{border-color:#238636;color:#7ee787}
+.harita-rozet.offline{border-color:#6e7681;color:#c9d1d9}
+.harita-rozet.belirsiz{border-color:#9e6a03;color:#f0c674}
+.harita-kisi-alt{margin-top:7px;color:#c9d1d9;font-size:11px;line-height:1.6}
+.harita-kisi-alt b{color:var(--dim);font-weight:normal}
+.harita-mobil-bag{display:none;margin-top:6px;color:#c9d1d9;font-size:10px;line-height:1.5}
+.harita-mobil-bag b{color:var(--dim);font-weight:normal}
+.harita-gorev-sutunlar{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+ width:100%;max-width:1560px;margin-inline:auto;gap:8px;align-items:start}
+.harita-gorev-sutun{position:relative;z-index:2;min-height:90px;border:1px solid var(--brd);border-radius:8px;
+ background:transparent;padding:6px}
+.harita-gorev-sutun h4{position:relative;z-index:3;background:#0f141b;font-size:11px;color:#c9d1d9;
+ padding:2px 3px 6px;border-bottom:1px solid var(--brd)}
+.harita-gorev-listesi{display:grid;gap:7px;padding-top:7px}
+.harita-gorev{z-index:3;padding:8px;background:var(--pnl);box-shadow:none}
+.harita-gorev:focus-visible{outline:2px solid #79c0ff;outline-offset:2px}
+.harita-gorev-id{font-size:10px;color:#b1bac4}
+.harita-gorev-baslik{font-size:12px;font-weight:bold;overflow-wrap:anywhere;margin:3px 0 6px}
+.harita-gorev-durum{display:inline-block;font-size:10px;padding:1px 6px;border:1px solid var(--brd);
+ border-radius:10px;color:#c9d1d9}
+.harita-gorev-durum.dur-pending{border-color:#6e7681;color:#c9d1d9}
+.harita-gorev-durum.dur-assigned{border-color:#1f6feb;color:#79c0ff}
+.harita-gorev-durum.dur-verified{border-color:#238636;color:#7ee787}
+.harita-gorev-durum.dur-dropped{border-color:#8b949e;color:#c9d1d9}
+.harita-gorev-durum.dur-pending_gorevli_review{border-color:#d2a8ff;color:#e6ccff}
+.harita-gorev-durum.dur-pending_verification{border-color:#9e6a03;color:#f0c674}
+.harita-gorev-durum.dur-pending_revision{border-color:#da3633;color:#ffb4ab}
+.harita-gorev-kisi{margin-top:5px;color:#c9d1d9;font-size:10px;overflow-wrap:anywhere}
+.harita-gorev-kisi b{color:var(--dim);font-weight:normal}
+.harita-agaci{max-width:1600px;margin:0 auto 16px}
+.harita-agaci-baslik{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 9px}
+.harita-agaci-baslik h3{font-size:13px}
+.harita-agaci>summary,.harita-kisi-iliskileri>summary{cursor:pointer;padding:10px 12px;color:#c9d1d9;font-size:12px;font-weight:bold}
+.harita-agaci>summary:focus-visible,.harita-agaci summary:focus-visible,.harita-kisi-iliskileri>summary:focus-visible{
+ outline:2px solid #79c0ff;outline-offset:2px;border-radius:7px}
+.harita-agaci-kokleri{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:18px;align-items:start;max-width:1580px;margin-inline:auto}
+.harita-agaci-kokleri>.harita-agaci-kok:last-child:nth-child(2n+3){grid-column:1/-1;width:calc(50% - 9px);justify-self:center}
+.harita-agaci-kok{position:relative;min-width:0;padding:16px 18px;border:1px solid var(--brd);border-radius:10px;background:#0f141b}
+.harita-agaci-kok-baslik{margin:0 0 9px;text-align:center;color:var(--dim);font-size:11px}
+.harita-agaci-kok>.harita-gorev{width:min(100%,520px);margin-inline:auto;border-top:2px solid var(--brd)}
+.harita-agaci-dal{position:relative;margin:4px 0 0;border:0;background:transparent;text-align:center}
+.harita-agaci-dal>summary{display:table;min-height:32px;margin:0 auto;padding:6px 11px;border:1px solid #28643b;border-radius:16px;
+ background:#102019;color:#7ee787;cursor:pointer;font-size:12px;font-weight:bold;position:relative;z-index:1}
+.harita-agaci-dal>summary:focus-visible{outline:2px solid #79c0ff;outline-offset:2px}
+.harita-agaci-bag-cizim{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:0}
+.harita-agaci-bag-cizim path{fill:none;stroke:#58a6ff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.harita-agaci-bag-cizim .harita-agaci-ok-ucu{fill:#58a6ff;stroke:none}
+.harita-agaci-bag-cizim circle{fill:#0f141b;stroke:#58a6ff;stroke-width:2}
+.harita-gorev-agaci{position:relative;display:grid;
+ grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:8px 12px;
+ width:100%;min-width:0;max-width:100%;margin:0 auto;padding:8px 0 0;overflow:visible;
+ list-style:none}
+.harita-gorev-agaci::before{display:none}
+.harita-gorev-agaci>li{position:relative;min-width:0;padding:20px 0 0;text-align:left}
+.harita-gorev-agaci>li[role="listitem"]{list-style:none}
+.harita-agaci-kol{display:none}
+.harita-gorev-agaci>li>.harita-gorev,.harita-gorev-agaci>li>.harita-agaci-arsiv-dal,
+.harita-gorev-agaci>li>.harita-agaci-dugum{position:relative;z-index:1}
+.harita-agaci-arsiv-dal{border:1px dashed #6e7681;border-radius:9px;background:#111820}
+.harita-agaci-arsiv-dal>summary{padding:8px 10px;color:#c9d1d9;cursor:pointer;font-size:11px;font-weight:bold;
+ overflow-wrap:anywhere}
+.harita-agaci-arsiv-dal>summary:focus-visible{outline:2px solid #79c0ff;outline-offset:2px;border-radius:7px}
+.harita-agaci-arsiv-dal .harita-gorev{border-top:2px solid #8b949e}
+.harita-agaci-detay-grup{margin:12px 0;border:1px solid var(--brd);border-radius:9px;background:#0f141b}
+.harita-agaci-detay-grup>summary{padding:10px 12px;color:#c9d1d9;cursor:pointer;font-size:12px;font-weight:bold}
+.harita-agaci-detay-grup>summary:focus-visible{outline:2px solid #79c0ff;outline-offset:2px;border-radius:7px}
+.harita-agaci-detay-grup>.harita-agaci-kokleri{padding:4px 10px 10px}
+.harita-legacy-kontrol{display:flex;align-items:end;gap:10px;flex-wrap:wrap;padding:10px}
+.harita-legacy-kontrol label{display:grid;gap:4px;color:#c9d1d9;font-size:11px}
+.harita-legacy-kontrol input{min-width:min(320px,75vw);padding:7px 9px;background:var(--pnl);color:var(--fg);border:1px solid var(--brd);border-radius:7px}
+.harita-legacy-sayac{color:#b1bac4;font-size:11px}
+.harita-legacy-listesi{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:7px;padding:0 10px 10px;align-items:start}
+.harita-legacy-kart .harita-gorev{padding:6px 8px;box-shadow:none}
+.harita-legacy-kart .harita-gorev-kisi{margin-top:3px}
+.harita-legacy-kart[hidden]{display:none!important}
+.harita-legacy-sayfalar{display:flex;align-items:center;justify-content:flex-start;gap:6px;flex-wrap:wrap;padding:0 10px 10px}
+.harita-legacy-sayfalar button{min-height:32px;padding:5px 9px}
+.harita-legacy-sayfalar button:focus-visible{outline:2px solid #79c0ff;outline-offset:2px}
+.harita-legacy-sayfalar button:disabled{opacity:.45;cursor:not-allowed}
+.harita-agaci-uyari{margin:8px 0;padding:8px 10px;border:1px solid var(--warn);border-radius:8px;background:#2b2210;color:#f0c674;font-size:11px}
+.harita-gorev-legacy{margin:8px 0;border:1px solid #8b949e;border-radius:8px;background:#0f141b;padding:8px}
+.harita-gorev-legacy>.harita-gorev{border-left:3px solid #8b949e}
+.harita-agaci-kontrol{display:flex;gap:6px;flex-wrap:wrap}
+.harita-agaci-kontrol button{padding:4px 8px;font-size:11px}
+.harita-iliski-efsane{display:flex;gap:12px;flex-wrap:wrap;margin:7px 0 12px;color:#c9d1d9;font-size:10px}
+.harita-iliski-efsane span{display:flex;align-items:center;gap:5px}
+.harita-iliski-cizgi{position:relative;display:inline-block;width:22px;border-top:2px solid #58a6ff}
+.harita-iliski-cizgi::after{content:"";position:absolute;right:-1px;top:-4px;border-top:4px solid transparent;
+ border-bottom:4px solid transparent;border-left:6px solid var(--ok)}
+.harita-iliski-cizgi.acan{border-top:2px dashed #8b949e}
+.harita-iliski-cizgi.atanan{border-top:2px dashed #58a6ff}
+.harita-iliski-cizgi.kontrol{border-top:2px dotted #d2a8ff}
+.harita-iliski-bilgi{display:inline-flex;align-items:center;gap:4px;padding:0 4px;border-radius:5px;background:#1c2430}
+.harita-iliski-bilgi::before{content:"";width:6px;height:6px;border-radius:50%;background:#8b949e}
+.harita-iliski-bilgi.atanan::before{background:#58a6ff}
+.harita-iliski-bilgi.kontrol::before{background:#d2a8ff}
+.harita-gorev-kisi.acan b{color:#b1bac4}
+.harita-gorev-kisi.atanan b{color:#79c0ff}
+.harita-gorev-kisi.kontrol b{color:#e6ccff}
+.harita-sorumlu-bag{margin-top:5px;color:#c9d1d9;font-size:10px;overflow-wrap:anywhere}
+.harita-sorumlu-bag b{color:var(--dim);font-weight:normal}
+.harita-iliski-notu{margin:6px 0;color:#c9d1d9;font-size:11px}
+.harita-kisi-iliskileri{margin:12px 0;border:1px solid var(--brd);border-radius:9px;background:#0f141b}
+.harita-kisi-iliskileri-icerik{padding:0 10px 10px}
+.harita-kisi-iliskileri .harita-ekipler{padding:0 10px 10px}
+.harita-arsiv{grid-column:1/-1;margin-top:9px;border:1px solid var(--brd);border-radius:8px;background:#0f141b}
+.harita-arsiv>summary{cursor:pointer;padding:8px 10px;color:#c9d1d9;font-size:11px;font-weight:bold}
+.harita-arsiv>summary:focus-visible{outline:2px solid #79c0ff;outline-offset:2px;border-radius:7px}
+.harita-arsiv .harita-gorev-listesi{grid-template-columns:repeat(auto-fit,minmax(170px,1fr));padding:0 8px 8px}
+.harita-efsane{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;color:#c9d1d9;font-size:10px}
+.harita-efsane-item{display:inline-flex;align-items:center;gap:5px}
+.harita-efsane-item .harita-cizgi{position:relative;display:inline-block;width:24px;height:0;border-top:2px solid #8b949e}
+.harita-efsane-item .harita-cizgi::after{content:"";position:absolute;right:-1px;top:-5px;
+ border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:6px solid #8b949e}
+.harita-efsane-item .harita-cizgi.atanan{border-top:2px dashed #58a6ff}
+.harita-efsane-item .harita-cizgi.atanan::after{border-left-color:#58a6ff}
+.harita-cizgi{fill:none;stroke-width:1.5;opacity:.38}
+.harita-cizgi.acan{stroke:#8b949e}
+.harita-cizgi.atanan{stroke:#58a6ff;stroke-dasharray:5 4}
+.harita-yuzey.bag-vurgu [data-h-kisi],.harita-yuzey.bag-vurgu [data-h-gorev]{opacity:.28}
+.harita-yuzey.bag-vurgu .harita-cizgi{opacity:.06}
+.harita-yuzey.bag-vurgu .harita-ok-hedef{opacity:.18}
+.harita-yuzey [data-h-kisi].baglanti-vurgulu,.harita-yuzey [data-h-gorev].baglanti-vurgulu{
+ opacity:1!important;position:relative;z-index:4;outline:2px solid #79c0ff;outline-offset:2px}
+.harita-yuzey [data-h-gorev].baglanti-vurgulu{box-shadow:0 0 0 2px #79c0ff55,0 5px 14px #0005}
+.harita-yuzey .harita-cizgi.baglanti-vurgulu{opacity:1;stroke-width:3.5}
+.harita-yuzey .harita-ok-hedef.baglanti-vurgulu{opacity:1}
+.harita-yuzey.task-vurgu .harita-gorev{opacity:.38}
+.harita-yuzey.task-vurgu .harita-gorev.task-baglanti-vurgulu{opacity:1;outline:2px solid #3fb950;outline-offset:2px}
+.harita-bos{grid-column:1/-1;border:1px dashed var(--brd);border-radius:8px;padding:10px;
+ color:#c9d1d9;font-size:11px}
+.harita-detay{width:min(700px,94vw);max-height:min(82vh,900px);margin:auto;padding:0;
+ border:1px solid var(--brd);border-radius:12px;background:var(--bg);color:var(--fg);box-shadow:0 18px 60px #000b}
+.harita-detay::backdrop{background:#0009}
+.harita-detay-ust{position:sticky;top:0;display:flex;align-items:center;gap:10px;padding:12px 14px;
+ background:var(--pnl);border-bottom:1px solid var(--brd);z-index:1}
+.harita-detay-ad{font-size:15px;font-weight:bold;overflow-wrap:anywhere}
+.harita-detay-kimlik{display:block;color:var(--dim);font-size:11px;overflow-wrap:anywhere}
+.harita-detay-ust button{margin-left:auto;white-space:nowrap}
+.harita-detay-icerik{overflow:auto;max-height:calc(min(82vh,900px) - 58px);padding:12px 14px}
+.harita-detay-grup{margin-bottom:14px}
+.harita-detay-grup h3{margin-bottom:7px;color:#c9d1d9;font-size:12px}
+.harita-detay-gorev{margin:0 0 7px;padding:9px;border:1px solid var(--brd);border-radius:8px;background:var(--pnl)}
+.harita-detay-gorev b{display:block;font-size:12px;overflow-wrap:anywhere}
+.harita-detay-gorev span{display:block;color:var(--dim);font-size:10px;margin-top:3px}
 #b-ekip{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;align-content:start}
 .model{background:var(--pnl);border:1px solid var(--brd);border-left:3px solid var(--dim);
 border-radius:9px;padding:9px 10px}
@@ -68,12 +295,22 @@ border-radius:9px;padding:9px 10px}
 .rozet-bd{font-size:10px;border:1px solid var(--denetci);color:var(--denetci);
 border-radius:8px;padding:0 6px;white-space:nowrap}
 .rol-goreci{color:var(--goreci)}.rol-isci{color:var(--isci)}.rol-denetci{color:var(--denetci)}
-#b-tahta{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:10px;align-content:start}
+#b-tahta{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));grid-auto-rows:max-content;gap:10px;align-content:start}
 .kol{background:var(--pnl);border:1px solid var(--brd);border-radius:9px;min-height:60px}
 .kol h3{font-size:12px;padding:6px 9px;border-bottom:1px solid var(--brd);color:var(--dim)}
 .kol h3[data-d="pending_verification"]{color:var(--warn)}
+.kol h3[data-d="pending_gorevli_review"]{color:#d2a8ff}
 .kol h3[data-d="verified"]{color:var(--ok)}
 .kol h3[data-d="pending_revision"]{color:var(--err)}
+.tahta-arsiv{grid-column:1/-1;background:var(--pnl);border:1px solid var(--brd);border-radius:9px}
+.tahta-arsiv>summary{cursor:pointer;padding:7px 10px;color:var(--dim);font-size:12px;font-weight:bold}
+.tahta-arsiv>summary:focus-visible{outline:2px solid #79c0ff;outline-offset:2px;border-radius:7px}
+.tahta-arsiv-icerik{padding:0 8px 8px}
+.tahta-arsiv-arama{width:min(100%,380px);margin:0 0 8px}
+.tahta-arsiv-bilgi{font-size:11px;color:var(--dim);margin:0 0 6px}
+.tahta-arsiv-kartlar{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:2px}
+.tahta-arsiv-devam{margin:2px 8px 8px}
+.tahta-bilinmeyen{grid-column:1/-1}
 .kart{margin:8px;padding:8px;border:1px solid var(--brd);border-radius:7px;background:var(--bg);font-size:13px}
 .kart .id{color:var(--dim)}
 .kart .kim{font-size:11px;color:var(--dim);margin-top:4px}
@@ -123,10 +360,59 @@ width:min(1100px,95vw);height:min(80vh,900px);display:grid;grid-template-rows:au
 .modal-baslik .kimlik{color:var(--dim);font-size:12px}
 .modal-baslik button{margin-left:auto}
 @media (max-width:900px){
- main{grid-template-columns:1fr;grid-template-rows:auto auto}
+ main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto}
+ #sol,#sag{min-width:0}
+ #sohbet{min-width:0}
+ #yazma{min-width:0;grid-template-columns:minmax(0,1fr) auto}
+ #yazma .yaz-sol{grid-column:1;grid-row:2}
+ #yazma #girdi{grid-column:1/-1;grid-row:1;width:100%;min-width:0}
+ #yazma #gonder{grid-column:2;grid-row:2}
  #sol{border-right:0;border-bottom:1px solid var(--brd);max-height:52vh}
  #sag{max-height:none}
  .bolum{max-height:60vh}
+}
+body.harita-tam .bolum{max-height:none}
+body.harita-tam #sag{height:100%;min-height:0}
+body.harita-tam #b-harita{height:100%;max-height:none;min-height:0}
+@media (max-width:700px){
+ .harita-kaydir{overflow-x:hidden;overflow-y:auto;padding:8px;touch-action:pan-x pan-y pinch-zoom}
+ .harita-yuzey{width:100%;min-width:0;min-height:100%}
+ .harita-agaci-kokleri{grid-template-columns:minmax(0,1fr);gap:14px}
+ .harita-agaci-kokleri>.harita-agaci-kok:last-child:nth-child(2n+3){grid-column:auto;width:auto;justify-self:stretch}
+ .harita-agaci-kok{padding:12px 8px}
+ .harita-agaci-kok>.harita-gorev{width:100%}
+ .harita-agaci-dal>summary{min-height:44px;padding:11px 14px}
+ .harita-gorev-agaci{grid-template-columns:minmax(0,1fr);width:100%;min-width:0;max-width:100%;gap:4px;overflow:visible}
+ .harita-legacy-listesi{grid-template-columns:minmax(0,1fr)}
+ .harita-agaci-kontrol{width:100%}
+ .harita-agaci-kontrol button{flex:1;min-height:44px;font-size:12px;padding:8px 10px}
+ .harita-legacy-kontrol input{min-height:44px;font-size:12px}
+ .harita-baglar{display:none}
+ .harita-oklar{display:none}
+ .harita-mobil-bag{display:block}
+ .harita-ekip-roller{grid-template-columns:minmax(0,1fr)}
+ .harita-katman-kisiler,.harita-gorev-sutunlar,.harita-arsiv .harita-gorev-listesi{
+  grid-template-columns:minmax(0,1fr)}
+ .harita-gorev-sutun{min-width:0}
+}
+@media (max-width:900px){
+ .harita-legacy-listesi{display:grid;grid-template-columns:minmax(0,1fr);gap:3px;padding:0 8px 8px}
+ .harita-legacy-kontrol input{min-height:44px}
+ .harita-legacy-kart .harita-gorev{display:grid;grid-template-columns:max-content max-content minmax(30px,min(20vw,190px)) minmax(0,max-content);
+  justify-content:start;align-items:center;gap:0 8px;height:44px;min-height:44px;box-sizing:border-box;overflow:hidden;padding:4px 6px}
+ .harita-legacy-kart .harita-gorev-id{grid-column:1;grid-row:1;white-space:nowrap;font-size:9px}
+ .harita-legacy-kart .harita-gorev-baslik{grid-column:3;grid-row:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+ .harita-legacy-kart .harita-gorev-durum[class*="dur-"]{grid-column:2;grid-row:1;max-width:min(20vw,100px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;padding:1px 4px}
+ .harita-legacy-kart .harita-gorev-durum:not([class*="dur-"]),.harita-legacy-kart .harita-gorev-kisi.acan,
+ .harita-legacy-kart .harita-gorev-kisi.kontrol{display:none}
+ .harita-legacy-kart .harita-gorev-kisi.atanan{grid-column:4;grid-row:1;min-width:0;max-width:min(25vw,130px);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;margin:0;font-size:9px}
+ .harita-legacy-sayfalar{padding:0 8px 8px;gap:5px}
+ .harita-legacy-sayfalar button{min-height:44px;padding:8px 10px;font-size:12px}
+}
+@media (min-width:701px) and (max-width:1100px){
+ .harita-gorev-sutunlar{max-width:none}
+ .harita-agaci-kokleri{grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr))}
 }
 </style></head><body>
 <header>
@@ -157,10 +443,12 @@ width:min(1100px,95vw);height:min(80vh,900px);display:grid;grid-template-rows:au
       <button class="sekme aktif" data-s="ekip">👥 Ekip</button>
       <button class="sekme" data-s="tahta">📋 Tahta</button>
       <button class="sekme" data-s="ekran">🖥️ Ekranlar</button>
+      <button class="sekme" data-s="harita">🗺️ Harita</button>
     </nav>
     <div id="b-ekip" class="bolum"></div>
     <div id="b-tahta" class="bolum gizli"></div>
     <div id="b-ekran" class="bolum gizli"></div>
+    <div id="b-harita" class="bolum gizli"></div>
   </section>
 </main>
 <div id="modal" class="gizli">
@@ -174,15 +462,32 @@ width:min(1100px,95vw);height:min(80vh,900px);display:grid;grid-template-rows:au
     <pre class="p-icerik tam" id="modal-icerik"></pre>
   </div>
 </div>
+<dialog id="harita-detay" class="harita-detay" aria-labelledby="harita-detay-ad">
+  <div class="harita-detay-ust">
+    <div><strong class="harita-detay-ad" id="harita-detay-ad"></strong>
+      <span class="harita-detay-kimlik" id="harita-detay-kimlik"></span></div>
+    <button type="button" id="harita-detay-kapat">Kapat <span aria-hidden="true">✕</span></button>
+  </div>
+  <div class="harita-detay-icerik" id="harita-detay-icerik"></div>
+</dialog>
 <script>
 "use strict";
 var S={veri:null,sekme:"ekip",duzenle:null,duzenleDeger:"",modal:null,gorunum:"grid",hata:false,hedef:"@hepsi",
- cevrimdisi:false,ekranHepsi:false,soru:false,sonId:null,yeni:0};
+ cevrimdisi:false,ekranHepsi:false,soru:false,sonId:null,yeni:0,haritaArsiv:{verified:false,dropped:false},
+ haritaLegacyArama:"",haritaLegacySayfa:0,
+haritaLegacyAnkor:null,haritaLegacyFaz:0,haritaLegacySonBoyut:0,
+haritaLegacyKayitlari:[],haritaLegacyVeri:null,haritaLegacyKs:null,
+haritaDallar:Object.create(null),haritaKisilerAcik:false,
+haritaRenderAnahtari:null,haritaPan:null,haritaPanKlikEngelle:false,haritaSeciliDenetci:null,
+tahtaRenderAnahtari:null,tahtaArsiv:{verified:{acik:false,arama:"",limit:50},dropped:{acik:false,arama:"",limit:50}}};
 var ROL_AD={goreci:"görevli",isci:"işçi",denetci:"denetçi"};
 var ROL_RENK={goreci:"#f0883e",isci:"#58a6ff",denetci:"#d2a8ff"};
-var DURUM_AD={pending:"Sırada",assigned:"Atandı",pending_verification:"Teslim ✋",
+var DURUM_AD={pending:"Sırada",assigned:"Atandı",pending_gorevli_review:"Görevli ilk kontrolünde 🔎",
+pending_verification:"Teslim ✋",
 verified:"Onaylı ✅",pending_revision:"Revize ✎",dropped:"İptal"};
-var DURUM_SIRA=["pending","assigned","pending_verification","verified","pending_revision","dropped"];
+var DURUM_SIRA=["pending","assigned","pending_gorevli_review","pending_verification","verified","pending_revision","dropped"];
+var TAHTA_AKTIF=["pending","assigned","pending_gorevli_review","pending_verification","pending_revision"];
+var TAHTA_ARSIV=["verified","dropped"];
 
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
@@ -240,6 +545,9 @@ function ciz(){
    '<div class="empty">⚠️ Panel verisine ulaşılamıyor; ekip listesi henüz yüklenemedi.</div>';
   document.getElementById("b-ekran").innerHTML=
    '<div class="empty">⚠️ Panel verisine ulaşılamıyor; ekran ve bağlantı durumu doğrulanamıyor.</div>';
+  document.getElementById("b-harita").innerHTML=
+   '<div class="empty">⚠️ Panel verisi alınamadı; harita yüklenemedi.</div>';
+  S.haritaRenderAnahtari=null;
   document.getElementById("bekleyen").classList.add("gizli");
   return;
  }
@@ -258,6 +566,7 @@ function ciz(){
  ekipCiz(veri,ks,kimlikler);
  tahtaCiz(veri);
  ekranCiz(veri,ks,kimlikler);
+ haritaCiz(veri,ks,kimlikler);
  modalCiz(veri,ks);
 }
 
@@ -496,25 +805,968 @@ function ekipCiz(veri,ks,kimlikler){
  editGeriYukle();
 }
 
+function tahtaKartHtml(g,veri,st){
+ return '<div class="kart kart-'+st+'"><span class="id">#'+esc(g.id)+"</span> "+esc(g.baslik||"Başlıksız görev")+
+  '<div class="kim">'+esc(kisiAd(veri,g.kimden))+" → "+esc(g.assignee?kisiAd(veri,g.assignee):"—")+
+  "</div>"+(st==="bilinmiyor"?'<div class="kim">Bilinmeyen durum: '+esc(g.durum||"Durum belirtilmemiş")+"</div>":"")+
+  (g.gorevli_kimlik?'<div class="kim">İlk kontrol: '+esc(kisiAd(veri,g.gorevli_kimlik))+
+  '</div>':'')+'</div>';
+}
+
+function tahtaArsivKartlari(st){
+ var veri=S.veri||{}, tum=(veri.gorevler||[]).filter(function(g){return g.durum===st;});
+ var durum=S.tahtaArsiv[st], ara=String(durum.arama||"").trim().toLocaleLowerCase("tr-TR");
+ var eslesen=ara?tum.filter(function(g){
+  var alanlar=[g.id,g.baslik,g.assignee,kisiAd(veri,g.assignee)];
+  return alanlar.some(function(x){return String(x==null?"":x).toLocaleLowerCase("tr-TR").indexOf(ara)>=0;});
+ }):tum;
+ var gorunen=eslesen.slice(0,durum.limit);
+ var bilgi=ara?'<div class="tahta-arsiv-bilgi">'+eslesen.length+" sonuç / "+tum.length+" görev</div>":"";
+ var kartlar=gorunen.map(function(g){return tahtaKartHtml(g,veri,st);}).join("");
+ var kalan=eslesen.length-gorunen.length;
+ var devam=kalan>0?'<button class="tahta-arsiv-devam" type="button" data-tahta-devam="'+st+
+  '" data-tahta-focus="devam-'+st+'">50 daha göster ('+kalan+' kaldı)</button>':"";
+ return '<div class="tahta-arsiv-icerik"><input class="tahta-arsiv-arama" type="search"'+
+  ' aria-label="'+esc(DURUM_AD[st])+ ' arşivinde ara (görev no, başlık veya atanan)" placeholder="Arşivde ara: görev no, başlık, atanan"'+
+  ' value="'+esc(durum.arama)+'" data-tahta-arama="'+st+'" data-tahta-focus="arama-'+st+'">'+bilgi+
+  '<div class="tahta-arsiv-kartlar">'+(kartlar||'<div class="empty">'+(ara?"Eşleşen görev yok.":"Arşiv boş.")+"</div>")+
+  '</div>'+devam+'</div>';
+}
+
+function tahtaRenderAnahtari(veri,gs){
+ return JSON.stringify(gs.map(function(g){
+  return [g.id,g.durum,g.baslik,g.kimden,kisiAd(veri,g.kimden),g.assignee,
+   kisiAd(veri,g.assignee),g.gorevli_kimlik,kisiAd(veri,g.gorevli_kimlik)];
+ }));
+}
+
+function tahtaOdakBilgisi(el){
+ var aktif=document.activeElement;
+ if(!aktif||!el.contains(aktif)||!aktif.getAttribute)return null;
+ var anahtar=aktif.getAttribute("data-tahta-focus");
+ if(!anahtar)return null;
+ return {anahtar:anahtar,bas:typeof aktif.selectionStart==="number"?aktif.selectionStart:null,
+  son:typeof aktif.selectionEnd==="number"?aktif.selectionEnd:null};
+}
+
+function tahtaOdakGeriYukle(el,odak){
+ if(!odak)return;
+ var eslesmeler=el.querySelectorAll("[data-tahta-focus]");
+ for(var i=0;i<eslesmeler.length;i++)if(eslesmeler[i].getAttribute("data-tahta-focus")===odak.anahtar){
+  eslesmeler[i].focus();
+  if(odak.bas!==null&&typeof eslesmeler[i].setSelectionRange==="function"){
+   eslesmeler[i].setSelectionRange(odak.bas,odak.son);
+  }
+  break;
+ }
+}
+
+function tahtaArsivAciklariniOku(el){
+ TAHTA_ARSIV.forEach(function(st){
+  var detay=el.querySelector('details[data-tahta-arsiv="'+st+'"]');
+  if(detay)S.tahtaArsiv[st].acik=detay.open;
+ });
+}
+
+function tahtaArsivIcerikCiz(st){
+ var detay=document.querySelector('#b-tahta details[data-tahta-arsiv="'+st+'"]');
+ if(!detay||!detay.open)return;
+ var once=tahtaOdakBilgisi(detay);
+ detay.innerHTML='<summary data-tahta-focus="arsiv-baslik-'+st+'">'+esc(DURUM_AD[st])+" ("+
+  (S.veri.gorevler||[]).filter(function(g){return g.durum===st;}).length+
+  ')</summary>'+tahtaArsivKartlari(st);
+ tahtaOdakGeriYukle(detay,once);
+}
+
 function tahtaCiz(veri){
- var el=document.getElementById("b-tahta");
- var gs=veri.gorevler||[];
+ var el=document.getElementById("b-tahta"), gs=veri.gorevler||[];
+ var anahtar=tahtaRenderAnahtari(veri,gs);
+ if(anahtar===S.tahtaRenderAnahtari)return;
+ var odak=tahtaOdakBilgisi(el);
+ tahtaArsivAciklariniOku(el);
+ S.tahtaRenderAnahtari=anahtar;
  if(!gs.length){
   el.innerHTML='<div class="empty">henüz görev yok. Baş denetçi/görevli model:<br>'+
    '<code>yuva gorev ekle "iş" --from sam --ata sus</code></div>';
   return;
  }
  var html="";
- DURUM_SIRA.forEach(function(st){
+ TAHTA_AKTIF.forEach(function(st){
   var kol=gs.filter(function(g){return g.durum===st;});
   html+='<div class="kol"><h3 data-d="'+st+'">'+(DURUM_AD[st]||st)+" ("+kol.length+")</h3>";
-  html+=kol.length?kol.map(function(g){
-   return '<div class="kart kart-'+st+'"><span class="id">#'+esc(g.id)+"</span> "+esc(g.baslik)+
-    '<div class="kim">'+esc(kisiAd(veri,g.kimden))+" → "+esc(g.assignee?kisiAd(veri,g.assignee):"—")+
-    "</div></div>";}).join(""):'<div class="empty">—</div>';
+  html+=kol.length?kol.map(function(g){return tahtaKartHtml(g,veri,st);}).join(""):'<div class="empty">—</div>';
   html+="</div>";
  });
+ TAHTA_ARSIV.forEach(function(st){
+  var sayi=gs.filter(function(g){return g.durum===st;}).length;
+  html+='<details class="tahta-arsiv" data-tahta-arsiv="'+st+'"'+
+   (S.tahtaArsiv[st].acik?' open':'')+'><summary data-tahta-focus="arsiv-baslik-'+st+'">'+esc(DURUM_AD[st])+" ("+sayi+")</summary>"+
+   (S.tahtaArsiv[st].acik?tahtaArsivKartlari(st):"")+'</details>';
+ });
+ var bilinmeyenler=gs.filter(function(g){return TAHTA_AKTIF.indexOf(g.durum)<0&&TAHTA_ARSIV.indexOf(g.durum)<0;});
+ if(bilinmeyenler.length){
+  html+='<div class="kol tahta-bilinmeyen"><h3>Bilinmeyen durum ('+bilinmeyenler.length+')</h3>'+
+   bilinmeyenler.map(function(g){return tahtaKartHtml(g,veri,"bilinmiyor");}).join("")+"</div>";
+ }
  el.innerHTML=html;
+ TAHTA_ARSIV.forEach(function(st){
+  var detay=el.querySelector('details[data-tahta-arsiv="'+st+'"]');
+  if(detay)detay.addEventListener("toggle",function(){
+   S.tahtaArsiv[st].acik=detay.open;
+   if(detay.open&&!detay.querySelector(".tahta-arsiv-icerik"))tahtaArsivIcerikCiz(st);
+  });
+ });
+ tahtaOdakGeriYukle(el,odak);
+}
+
+function haritaGorevHtml(g,veri,ks,etiket,kompaktLegacy){
+ var durumSinif=DURUM_SIRA.indexOf(g.durum)>=0?g.durum:"bilinmiyor";
+ var acan=!g.kimden?"Belirtilmemiş":
+  (Object.prototype.hasOwnProperty.call(ks,g.kimden)?kisiAd(veri,g.kimden):g.kimden+" (kimlik eşleşmedi)");
+ var atanan=!g.assignee?(g.durum==="pending"?"Atama bekliyor":"Atanmamış"):
+  (Object.prototype.hasOwnProperty.call(ks,g.assignee)?kisiAd(veri,g.assignee):g.assignee+" (kimlik eşleşmedi)");
+ var atananKisi=ks[g.assignee]||{},atananMeta=atananKisi.arac||atananKisi.rol?
+  ' · kimlik '+esc(g.assignee)+' · '+esc(atananKisi.arac||"araç belirtilmemiş")+' · '+
+  esc(ROL_AD[atananKisi.rol]||atananKisi.rol||"rol belirtilmemiş"):'';
+ var acanEtiket=g.kimden&&Object.prototype.hasOwnProperty.call(ks,g.kimden)?
+  acan+' · '+g.kimden:acan;
+ var gorevliEtiket=g.gorevli_kimlik&&Object.prototype.hasOwnProperty.call(ks,g.gorevli_kimlik)?
+  kisiAd(veri,g.gorevli_kimlik)+' · '+g.gorevli_kimlik:g.gorevli_kimlik;
+ var gorevKimlik='<div class="harita-gorev-id">Görev #'+esc(g.id)+'</div>',gorevBaslik='<div class="harita-gorev-baslik">'+
+  esc(g.baslik||"Başlıksız görev")+'</div>',gorevDurum='<span class="harita-gorev-durum dur-'+durumSinif+'">'+
+  esc(DURUM_AD[g.durum]||g.durum||"Durum belirtilmemiş")+'</span>';
+ return '<article class="harita-gorev" data-h-gorev="'+esc(g.id)+'" data-h-ust-gorev="'+
+  esc(g.ust_gorev_id==null?"":g.ust_gorev_id)+'" data-h-kimden="'+
+  esc(g.kimden||"")+'" data-h-assignee="'+esc(g.assignee||"")+'">'+
+  (kompaktLegacy?gorevKimlik+gorevDurum+gorevBaslik:gorevKimlik+gorevBaslik+gorevDurum)+(etiket?'<span class="harita-gorev-durum">'+
+  esc(etiket)+'</span>':'')+'<div class="harita-gorev-kisi atanan">'+
+  '<b>Atanan:</b> '+esc(atanan)+atananMeta+'</div><div class="harita-gorev-kisi acan">'+
+  '<b>Açan:</b> '+esc(acanEtiket)+'</div>'+(g.gorevli_kimlik?'<div class="harita-gorev-kisi kontrol"><b>İlk kontrol:</b> '+
+  esc(gorevliEtiket)+'</div>':'')+'</article>';
+}
+
+var HARITA_EKIP_RENKLER=["#56b4e9","#e69f00","#009e73","#d55e00","#cc79a7","#0072b2"];
+var HARITA_EKIP_SEMBOLLER=["●","■","▲","◆","○","□"];
+
+function haritaEkipleriniBul(ks,denetciler){
+ var renkSirasi=denetciler.slice().sort(function(a,b){return String(a).localeCompare(String(b));});
+ var ekipler=Object.create(null), atanmamis={goreci:[],isci:[]};
+ renkSirasi.forEach(function(k,i){
+  ekipler[k]={kimlik:k,renk:HARITA_EKIP_RENKLER[i%HARITA_EKIP_RENKLER.length],
+   sembol:HARITA_EKIP_SEMBOLLER[i%HARITA_EKIP_SEMBOLLER.length],numara:i+1,goreci:[],isci:[]};
+ });
+ Object.keys(ks).forEach(function(k){
+  var v=ks[k]||{},rol=v.rol;
+  if(rol!=="goreci"&&rol!=="isci")return;
+  var sorumlu=v.sorumlu_kimlik;
+  if(typeof sorumlu==="string"&&ekipler[sorumlu])ekipler[sorumlu][rol].push(k);
+  else atanmamis[rol].push(k);
+ });
+ return {ekipler:ekipler,atanmamis:atanmamis};
+}
+
+function haritaKisiHtml(k,veri,ks,gs,ekip,denetciSecilebilir,ustBag,basDenetci){
+ var v=ks[k]||{}, sinif=S.hata?"belirsiz":(v.online?"online":"offline");
+ var sonKalp=v.son_kalp?goreli(v.son_kalp):"henüz kalp yok";
+ var kalpTitle=v.son_kalp||"Henüz başarılı kalp alınmadı";
+ var isci=v.rol==="isci", etkinlik="", etkinlikId="harita-etkinlik-"+kimId(k);
+ if(isci){
+  var atananIsler=gs.filter(function(g){return g.assignee===k;});
+  var durumEtiketleri=[
+   {durum:"pending_revision",ad:"Revize bekliyor",sinif:"revize"},
+   {durum:"pending_gorevli_review",ad:"Görevli ilk kontrolünde",sinif:"kontrol"},
+   {durum:"pending_verification",ad:"Teslim etti",sinif:"teslim"},
+   {durum:"assigned",ad:"İşi aldı",sinif:"alinan"}
+  ];
+  durumEtiketleri.forEach(function(x){
+   var adet=atananIsler.filter(function(g){return g.durum===x.durum;}).length;
+   if(adet)etkinlik+='<span class="harita-etkinlik '+x.sinif+'">'+x.ad+
+    (adet>1?" · "+adet:"")+'</span>';
+  });
+  if(!etkinlik)etkinlik='<span class="harita-etkinlik">Boşta</span>';
+  etkinlik='<div class="harita-kisi-etkinlik" id="'+esc(etkinlikId)+'">'+etkinlik+'</div>';
+ }
+ var rolAd=ROL_AD[v.rol]||v.rol||"belirtilmemiş", ekipEtiket=ekip?" · Ekip E"+ekip.numara:"";
+ var acilis=isci?' role="button" tabindex="0" aria-haspopup="dialog" data-h-isci="'+esc(k)+
+  '" aria-controls="harita-detay" aria-describedby="'+esc(etkinlikId)+'" aria-label="'+
+  esc((v.ad||k)+" ("+k+") · "+onlineEtiketi(v)+ekipEtiket+" · Rol: "+rolAd+" · işçi görev ayrıntılarını aç")+'"':
+  (denetciSecilebilir?' role="button" tabindex="0" data-h-denetci="'+esc(k)+
+   '" aria-pressed="'+(S.haritaSeciliDenetci===k?'true':'false')+'" aria-label="'+
+   esc((v.ad||k)+" denetçisinin ekibini seç · Rol: "+rolAd)+'"':'');
+ var ekipSinif=ekip?" ekip-uyesi":"";
+ var ekipStil=ekip?' style="--ekip-renk:'+ekip.renk+'"':
+  (ustBag?' style="--ekip-renk:'+ustBag.renk+'"':'');
+ var ekipData=ekip?' data-h-sorumlu="'+esc(ekip.kimlik)+'"':'';
+ var ustData=ustBag?' data-h-ust="'+esc(ustBag.kimlik)+'"':'';
+ var sorumluMetni="";
+ if(ustBag){var ustKisi=ks[ustBag.kimlik]||{};sorumluMetni='<div class="harita-sorumlu-bag"><b>Üst denetçi:</b> '+
+  esc(ustKisi.ad||ustBag.kimlik)+' · '+esc(ustBag.kimlik)+'</div>';}
+ else if(ekip){var ekipSorumlusu=ks[ekip.kimlik]||{};sorumluMetni='<div class="harita-sorumlu-bag"><b>Ekip sorumlusu:</b> '+
+  esc(ekipSorumlusu.ad||ekip.kimlik)+' · '+esc(ekip.kimlik)+'</div>';}
+ var ekipRozet=ekip?'<span class="harita-kume-rozet">'+
+  esc(ekip.sembol)+" E"+ekip.numara+'</span>':'';
+ var basDenetciRozet=basDenetci?'<span class="harita-kume-rozet bas-denetci-rozet">🔍 Baş denetçi</span>':'';
+ var mobilBag="";
+ if(ustBag){
+  var ust=ks[ustBag.kimlik]||{};
+  mobilBag='<div class="harita-mobil-bag"><b>Üst denetçi:</b> '+esc(ust.ad||ustBag.kimlik)+
+   ' · açık sorumlu_kimlik bağı</div>';
+ }else if(ekip){
+  var sorumlu=ks[ekip.kimlik]||{};
+  mobilBag='<div class="harita-mobil-bag"><b>Ekip:</b> E'+ekip.numara+' · '+
+   esc(sorumlu.ad||ekip.kimlik)+' · açık sorumlu_kimlik bağı</div>';
+ }
+ return '<article class="harita-kisi '+sinif+ekipSinif+(denetciSecilebilir?' harita-denetci':'')+
+  (basDenetci?' bas-denetci':'')+'" data-h-kisi="'+esc(k)+'"'+
+  ekipStil+ekipData+ustData+acilis+'><div class="harita-kisi-ust"><span class="harita-rozet '+sinif+'">'+
+  esc(onlineEtiketi(v))+'</span>'+basDenetciRozet+ekipRozet+'<strong class="harita-kisi-ad">'+esc(v.ad||k)+'</strong></div>'+
+  '<span class="harita-kimlik">'+esc(k)+'</span><div class="harita-kisi-alt"><div><b>Rol:</b> '+
+  esc(ROL_AD[v.rol]||v.rol||"belirtilmemiş")+' · <b>Araç:</b> '+esc(v.arac||"belirtilmemiş")+
+  '</div><div><b>Son kalp:</b> <time title="'+esc(kalpTitle)+'">'+esc(sonKalp)+
+  '</time></div></div>'+sorumluMetni+mobilBag+etkinlik+'</article>';
+}
+
+function haritaRolKatmani(ad,rol,kimlikler,veri,ks,gs,aciklama,denetciSecilebilir,ustBaglar,basDenetciKimlik){
+ if(!kimlikler.length)return "";
+ var html='<section class="harita-katman" data-rol="'+esc(rol)+'"><h4 class="harita-katman-etiket">'+
+  esc(ad)+' katmanı<small>'+esc(aciklama)+'</small></h4><div class="harita-katman-kisiler">';
+ kimlikler.forEach(function(k){html+=haritaKisiHtml(k,veri,ks,gs,null,denetciSecilebilir,
+  ustBaglar&&ustBaglar[k]?ustBaglar[k]:null,k===basDenetciKimlik);});
+ return html+'</div></section>';
+}
+
+function haritaEkipGorunumu(veri,ks,denetciler){
+ var bulunan=haritaEkipleriniBul(ks,denetciler),ekipler=bulunan.ekipler,html='<div class="harita-ekipler">',ekipSayisi=0;
+ denetciler.forEach(function(d){
+  var ekip=ekipler[d];
+  if(!ekip.goreci.length&&!ekip.isci.length)return;
+  ekipSayisi++;
+  var v=ks[d]||{},ad=v.ad||d,secili=S.haritaSeciliDenetci===d;
+  html+='<section class="harita-ekip'+(secili?' secili':'')+'" data-h-ekip="'+esc(d)+
+   '" style="--ekip-renk:'+ekip.renk+'"><h3 class="harita-ekip-baslik">'+
+   esc(ekip.sembol)+" E"+ekip.numara+' · '+esc(ad)+' ekibi <small>Üyelik: açık sorumlu_kimlik</small></h3>'+
+   '<div class="harita-ekip-roller"><div class="harita-ekip-rol"><h4>Görevliler · '+ekip.goreci.length+
+   '</h4><div class="harita-katman-kisiler">';
+  if(!ekip.goreci.length)html+='<div class="harita-bos">Bu denetçiye bağlı görevli yok.</div>';
+  ekip.goreci.forEach(function(k){html+=haritaKisiHtml(k,veri,ks,veri.gorevler||[],ekip,false);});
+  html+='</div></div><div class="harita-ekip-rol"><h4>İşçiler · '+ekip.isci.length+
+   '</h4><div class="harita-katman-kisiler">';
+  if(!ekip.isci.length)html+='<div class="harita-bos">Bu denetçiye bağlı işçi yok.</div>';
+  ekip.isci.forEach(function(k){html+=haritaKisiHtml(k,veri,ks,veri.gorevler||[],ekip,false);});
+  html+='</div></div></div></section>';
+ });
+ var atanmamislar=bulunan.atanmamis, toplam=atanmamislar.goreci.length+atanmamislar.isci.length;
+ if(!toplam)return {html:ekipSayisi?html+'</div>':"",ekipler:ekipler};
+ html+='<section class="harita-atanmamis"><h3>Atanmamış / ekipsiz · '+toplam+
+  ' <small>Geçerli sorumlu_kimlik bağı olmayan kişiler</small></h3><div class="harita-ekip-roller">';
+ ["goreci","isci"].forEach(function(rol){
+  var ad=ROL_AD[rol],kisiler=atanmamislar[rol];
+  html+='<div class="harita-ekip-rol"><h4>'+esc(ad)+' · '+kisiler.length+
+   '</h4><div class="harita-katman-kisiler">';
+  if(!kisiler.length)html+='<div class="harita-bos">Ekipsiz '+esc(ad)+' yok.</div>';
+  kisiler.forEach(function(k){html+=haritaKisiHtml(k,veri,ks,veri.gorevler||[],null,false);});
+  html+='</div></div>';
+ });
+ html+='</div></section></div>';
+ return {html:html,ekipler:ekipler};
+}
+
+function haritaDenetciIliskileriHtml(veri,ks,gs,denetciler){
+ if(!denetciler.length)return '<div class="harita-bos">Denetçi kaydı yok.</div>';
+ var baslar=denetciler.filter(function(k){return !!(ks[k]||{}).bas_denetci;}),tekBas=baslar.length===1?baslar[0]:null;
+ var bagli=tekBas?denetciler.filter(function(k){return k!==tekBas&&(ks[k]||{}).sorumlu_kimlik===tekBas;}):[];
+ var diger=tekBas?denetciler.filter(function(k){return k!==tekBas&&bagli.indexOf(k)<0;}):[];
+ var ekipler=haritaEkipleriniBul(ks,denetciler).ekipler,ustBaglar=Object.create(null),html='';
+ bagli.forEach(function(k){ustBaglar[k]={kimlik:tekBas,renk:ekipler[k].renk};});
+ html+='<p class="harita-iliski-notu">Denetçi bağlantıları yalnız açık sorumlu_kimlik alanına göre gruplanır; eksik bağlar üst ilişki sayılmaz.</p>';
+ if(tekBas){
+  html+='<h4 class="harita-bolum-baslik">Baş denetçi</h4>'+haritaRolKatmani("Baş denetçi","denetci",[tekBas],veri,ks,gs,
+   "Tekil bas_denetci kaydı",true,null,tekBas);
+  if(bagli.length)html+='<h4 class="harita-bolum-baslik">Açık sorumlu bağı olan denetçiler · '+bagli.length+'</h4>'+
+   haritaRolKatmani("Bağlı denetçiler","denetci",bagli,veri,ks,gs,"Yalnız sorumlu_kimlik eşleşmeleri",true,ustBaglar);
+  if(diger.length)html+='<h4 class="harita-bolum-baslik">Bağı farklı veya belirtilmemiş denetçiler · '+diger.length+'</h4>'+
+   haritaRolKatmani("Diğer denetçiler","denetci",diger,veri,ks,gs,"Baş denetçiye bağ çizilmedi",true);
+ }else{
+  var neden=baslar.length>1?"Birden çok bas_denetci kaydı var; aralarında üst-alt bağı kurulmadı.":
+   "bas_denetci kaydı yok; yalnız kişi kartları gösteriliyor.";
+  html+='<h4 class="harita-bolum-baslik">Denetçiler · '+denetciler.length+'</h4><p class="harita-iliski-notu">'+esc(neden)+
+   ' Sorumlu bağlantıları ekip alanında ayrıca listelenir.</p>'+haritaRolKatmani("Denetçiler","denetci",denetciler,veri,ks,gs,
+   neden,true);
+ }
+ return html;
+}
+
+function haritaEkipSeciminiGuncelle(el){
+ var yuzey=el.querySelector(".harita-yuzey"),secili=S.haritaSeciliDenetci;
+ if(!yuzey)return;
+ yuzey.classList.toggle("ekip-secimi",!!secili);
+ Array.prototype.forEach.call(el.querySelectorAll("[data-h-denetci]"),function(n){
+  var k=n.getAttribute("data-h-denetci"),aktif=k===secili;
+  n.classList.toggle("denetcisi-secili",aktif);
+  n.setAttribute("aria-pressed",aktif?"true":"false");
+ });
+ Array.prototype.forEach.call(el.querySelectorAll("[data-h-sorumlu]"),function(n){
+  n.classList.toggle("ekip-vurgulu",!!secili&&n.getAttribute("data-h-sorumlu")===secili);
+ });
+ Array.prototype.forEach.call(el.querySelectorAll("[data-h-ust]"),function(n){
+  n.classList.toggle("ekip-vurgulu",!!secili&&n.getAttribute("data-h-ust")===secili);
+ });
+ Array.prototype.forEach.call(el.querySelectorAll("[data-h-ekip]"),function(n){
+  n.classList.toggle("secili",!!secili&&n.getAttribute("data-h-ekip")===secili);
+ });
+ Array.prototype.forEach.call(el.querySelectorAll(".harita-hiyerarsi[data-h-sorumlu]"),function(n){
+  n.classList.toggle("secili",!!secili&&n.getAttribute("data-h-sorumlu")===secili);
+ });
+ Array.prototype.forEach.call(el.querySelectorAll(".harita-ok-hedef[data-h-sorumlu]"),function(n){
+  n.classList.toggle("secili",!!secili&&n.getAttribute("data-h-sorumlu")===secili);
+ });
+ Array.prototype.forEach.call(el.querySelectorAll(".harita-hiyerarsi[data-h-ust]"),function(n){
+  n.classList.toggle("secili",!!secili&&n.getAttribute("data-h-ust")===secili);
+ });
+ Array.prototype.forEach.call(el.querySelectorAll(".harita-ok-hedef[data-h-ust]"),function(n){
+  n.classList.toggle("secili",!!secili&&n.getAttribute("data-h-ust")===secili);
+ });
+}
+
+function haritaDetayGorevHtml(g,veri){
+ var acan=g.kimden?kisiAd(veri,g.kimden):"Belirtilmemiş";
+ return '<article class="harita-detay-gorev"><b>Görev #'+esc(g.id)+' · '+
+  esc(g.baslik||"Başlıksız görev")+'</b><span>Durum: '+
+  esc(DURUM_AD[g.durum]||g.durum||"belirtilmemiş")+' · Açan: '+esc(acan)+'</span></article>';
+}
+
+function haritaDetayAc(k){
+ var veri=S.veri||{}, ks=veri.kullanicilar||{}, v=ks[k]||{};
+ var isler=(veri.gorevler||[]).filter(function(g){return g.assignee===k;});
+ var gruplar=[
+  {ad:"Alınan",isler:isler.filter(function(g){return g.durum==="assigned";})},
+  {ad:"Görevli ilk kontrolünde",isler:isler.filter(function(g){return g.durum==="pending_gorevli_review";})},
+  {ad:"Teslim edilen",isler:isler.filter(function(g){return g.durum==="pending_verification";})},
+  {ad:"Revize bekleyen",isler:isler.filter(function(g){return g.durum==="pending_revision";})},
+  {ad:"Geçmiş",isler:isler.filter(function(g){return ["verified","dropped"].indexOf(g.durum)>=0;})},
+  {ad:"Diğer durumlar",isler:isler.filter(function(g){return ["assigned","pending_gorevli_review","pending_revision","pending_verification","verified","dropped"].indexOf(g.durum)<0;})}
+ ];
+ document.getElementById("harita-detay-ad").textContent=v.ad||k;
+ document.getElementById("harita-detay-kimlik").textContent=k+" · "+(ROL_AD[v.rol]||v.rol||"rol belirtilmemiş");
+ document.getElementById("harita-detay-icerik").innerHTML=gruplar.map(function(g){
+  return '<section class="harita-detay-grup"><h3>'+esc(g.ad)+' · '+g.isler.length+
+   '</h3>'+(g.isler.length?g.isler.map(function(x){return haritaDetayGorevHtml(x,veri);}).join(""):
+   '<div class="harita-bos">Bu grupta görev yok.</div>')+'</section>';
+ }).join("");
+ var dialog=document.getElementById("harita-detay");
+ if(!dialog.open)dialog.showModal();
+}
+
+function haritaKimlikDurumunuGuncelle(el,ks){
+ Array.prototype.forEach.call(el.querySelectorAll("[data-h-kisi]"),function(n){
+  var k=n.getAttribute("data-h-kisi"), v=ks[k]||{};
+  var sinif=S.hata?"belirsiz":(v.online?"online":"offline");
+  if(!n.classList.contains(sinif)){
+   ["online","offline","belirsiz"].forEach(function(s){n.classList.remove(s);});
+   n.classList.add(sinif);
+  }
+  var rozet=n.querySelector(".harita-rozet"), etiket=onlineEtiketi(v);
+  if(rozet){
+   if(!rozet.classList.contains(sinif)){
+    ["online","offline","belirsiz"].forEach(function(s){rozet.classList.remove(s);});
+    rozet.classList.add(sinif);
+   }
+   if(rozet.textContent!==etiket)rozet.textContent=etiket;
+  }
+  var kalp=n.querySelector(".harita-kisi-alt time");
+  if(kalp){
+   var gorunum=v.son_kalp?goreli(v.son_kalp):"henüz kalp yok";
+   var title=v.son_kalp||"Henüz başarılı kalp alınmadı";
+   if(kalp.textContent!==gorunum)kalp.textContent=gorunum;
+   if(kalp.title!==title)kalp.title=title;
+  }
+ });
+}
+
+function haritaAgaciModeli(gs){
+ var sayilar=Object.create(null),dugmler=[],uyarilar=[];
+ gs.forEach(function(g,i){
+  var varId=g&&g.id!==undefined&&g.id!==null&&String(g.id)!=="";
+  var anahtar=varId?String(g.id):"";
+  if(varId)sayilar[anahtar]=(sayilar[anahtar]||0)+1;
+  dugmler.push({g:g||{},sira:i,anahtar:anahtar,ust:null,cocuklar:[],legacy:!
+   Object.prototype.hasOwnProperty.call(g||{},"ust_gorev_id"),uyari:""});
+ });
+ dugmler.forEach(function(n){
+  if(!n.anahtar)n.uyari="Görev kimliği yok; ilişki kurulmadı.";
+  else if(sayilar[n.anahtar]>1)n.uyari="Görev kimliği yineleniyor; belirsiz bağlantılar çizilmedi.";
+ });
+ var idMap=Object.create(null);
+ dugmler.forEach(function(n){if(n.anahtar&&sayilar[n.anahtar]===1)idMap[n.anahtar]=n;});
+ dugmler.forEach(function(n){
+  if(n.uyari||n.legacy)return;
+  var ust=n.g.ust_gorev_id;
+  if(ust===null)return;
+  if((typeof ust!=="string"&&typeof ust!=="number")||String(ust)===""){
+   n.uyari="Üst görev kaydı geçersiz; bağlantı çizilmedi.";return;
+  }
+  var hedef=idMap[String(ust)];
+  if(!hedef){n.uyari=sayilar[String(ust)]?"Üst görev kimliği yineleniyor; bağlantı çizilmedi.":
+   "Üst görev #"+String(ust)+" bulunamadı; bağlantı çizilmedi.";return;}
+  if(hedef===n){n.uyari="Görev kendisini üst görev gösteriyor; bağlantı çizilmedi.";return;}
+  n.ust=hedef;
+ });
+ dugmler.forEach(function(n){
+  var yol=[],yer=Object.create(null),gez=n;
+  while(gez&&gez.ust){
+   if(yer[gez.sira]!==undefined){
+    yol.slice(yer[gez.sira]).forEach(function(d){d.ust=null;
+     d.uyari="Üst görev döngüsü saptandı; bu görev bağımsız gösteriliyor.";});
+    break;
+   }
+   yer[gez.sira]=yol.length;yol.push(gez);gez=gez.ust;
+  }
+ });
+ dugmler.forEach(function(n){if(n.ust)n.ust.cocuklar.push(n);});
+ dugmler.forEach(function(n){if(n.uyari)uyarilar.push(n);});
+ return {dugmler:dugmler,uyarilar:uyarilar};
+}
+
+function haritaAgacDurumuAcik(anahtar,varsayilan){
+ return Object.prototype.hasOwnProperty.call(S.haritaDallar,anahtar)?!!S.haritaDallar[anahtar]:!!varsayilan;
+}
+function haritaAgacDalHtml(n,veri,ks){
+ if(!n.cocuklar.length)return "";
+ var anahtar="branch:"+n.anahtar;
+ var arşiv=n.g.durum==="verified"||n.g.durum==="dropped";
+ var acik=haritaAgacDurumuAcik(anahtar,!arşiv);
+ return '<details class="harita-agaci-dal" data-h-tree-key="'+esc(anahtar)+'"'+(acik?' open':'')+'><summary aria-label="Alt görevler · '+n.cocuklar.length+' · Görev #'+
+  esc(n.g.id)+' altında doğrudan alt görevleri aç veya kapat">Alt görevler · '+n.cocuklar.length+
+  '</summary>'+haritaAgacCocuklariHtml(n.cocuklar,veri,ks,n.g.id)+'</details>';
+}
+function haritaAgacDugumuHtml(n,veri,ks){
+ var acikKart=haritaGorevHtml(n.g,veri,ks,n.legacy?"Eski kayıt · bağımsız":"");
+ var icerik='<div class="harita-agaci-dugum">'+acikKart+haritaAgacDalHtml(n,veri,ks)+'</div>';
+ var durumTerminal=n.g.durum==="verified"||n.g.durum==="dropped";
+ if(durumTerminal){
+  var anahtar="terminal:"+n.anahtar,acik=haritaAgacDurumuAcik(anahtar,false);
+  var ozet='#'+esc(n.g.id)+' · '+esc(n.g.baslik||"Başlıksız görev")+' · '+esc(DURUM_AD[n.g.durum]||n.g.durum);
+  icerik='<details class="harita-agaci-arsiv-dal" data-h-tree-key="'+esc(anahtar)+'"'+(acik?' open':'')+
+   '><summary>'+ozet+'</summary>'+icerik+'</details>';
+ }
+ return '<li role="listitem"><span class="harita-agaci-kol" aria-hidden="true"></span>'+icerik+'</li>';
+}
+function haritaAgacCocuklariHtml(cocuklar,veri,ks,ustId){
+ return '<ul class="harita-gorev-agaci" role="list" aria-label="Görev #'+esc(ustId)+' alt görevleri">'+
+  cocuklar.map(function(n){return haritaAgacDugumuHtml(n,veri,ks);}).join("")+'</ul>';
+}
+function haritaAgacKokuHtml(n,veri,ks,etiket){
+ return '<section class="harita-agaci-kok" data-child-count="'+n.cocuklar.length+'" role="listitem" aria-label="Kök görev #'+esc(n.g.id)+' akışı"><div class="harita-agaci-kok-baslik">'+
+  esc(etiket||"Kök görev")+'</div>'+haritaGorevHtml(n.g,veri,ks,etiket||"Kök görev")+
+  haritaAgacDalHtml(n,veri,ks)+'</section>';
+}
+function haritaAgacKoklerHtml(kokler,veri,ks,etiket){
+ return '<div class="harita-agaci-kokleri" role="list" aria-label="'+esc((etiket||"Kök görev")+' akışları')+'">'+
+  kokler.map(function(n){return haritaAgacKokuHtml(n,veri,ks,etiket);}).join("")+'</div>';
+}
+function haritaAgacBaglariniCiz(el){
+ if(!el)return;
+ var ns="http://www.w3.org/2000/svg";
+ Array.prototype.forEach.call(el.querySelectorAll(".harita-agaci-dal"),function(dal){
+  var ozet=dal.querySelector(":scope > summary");
+  var ustKart=dal.parentElement&&dal.parentElement.querySelector(":scope > .harita-gorev");
+  var eski=dal.querySelector(":scope > .harita-agaci-bag-cizim");
+  if(eski)eski.remove();
+  if(!ozet||!ustKart)return;
+  var dalRect=dal.getBoundingClientRect(),ozetRect=ozet.getBoundingClientRect(),ustRect=ustKart.getBoundingClientRect();
+  if(!dalRect.width||!ozetRect.width||!ustRect.width)return;
+  var gen=Math.max(1,dal.clientWidth),yuk=Math.max(dal.offsetHeight,dal.scrollHeight,1),ustY=ustRect.bottom-dalRect.top,ustOfset=Math.min(0,ustY);
+  var svg=document.createElementNS(ns,"svg");
+  svg.setAttribute("class","harita-agaci-bag-cizim");svg.setAttribute("aria-hidden","true");
+  svg.style.top=ustOfset+"px";svg.style.height=(yuk-ustOfset)+"px";svg.style.width=gen+"px";
+  svg.setAttribute("viewBox","0 "+ustOfset+" "+gen+" "+(yuk-ustOfset));svg.setAttribute("width",gen);svg.setAttribute("height",yuk-ustOfset);
+  function ciz(d){var p=document.createElementNS(ns,"path");p.setAttribute("d",d);svg.appendChild(p);}
+  var ustX=ustRect.left+ustRect.width/2-dalRect.left;
+  var ozetX=ozetRect.left+ozetRect.width/2-dalRect.left,ozetUst=ozetRect.top-dalRect.top,ozetAlt=ozetRect.bottom-dalRect.top;
+  ciz("M "+ustX+" "+ustY+" L "+ozetX+" "+ozetUst);
+  if(dal.open){
+   var liste=dal.querySelector(":scope > .harita-gorev-agaci");
+   if(liste){
+    var satirlar=Object.create(null);
+    Array.prototype.forEach.call(liste.querySelectorAll(":scope > li"),function(li){
+     if(li.hidden)return;
+     var gorunen=li.querySelector(":scope > details.harita-agaci-arsiv-dal > summary")||
+      li.querySelector(":scope > .harita-agaci-dugum > .harita-gorev")||li.querySelector(":scope > .harita-gorev");
+     if(!gorunen)return;
+     var r=gorunen.getBoundingClientRect();if(!r.width||!r.height)return;
+     var lr=li.getBoundingClientRect(),anahtar=Math.round(lr.top);
+     if(!satirlar[anahtar])satirlar[anahtar]=[];
+     satirlar[anahtar].push({x:r.left+r.width/2-dalRect.left,top:r.top-dalRect.top});
+    });
+    var anahtarlar=Object.keys(satirlar).sort(function(a,b){return Number(a)-Number(b);});
+    if(anahtarlar.length){
+     var buslar=anahtarlar.map(function(a){return Math.max(ozetAlt+8,Math.min.apply(null,satirlar[a].map(function(c){return c.top;}))-10);});
+     ciz("M "+ozetX+" "+ozetAlt+" V "+buslar[0]);
+     if(buslar.length>1)ciz("M "+ozetX+" "+buslar[0]+" V "+buslar[buslar.length-1]);
+     anahtarlar.forEach(function(a,i){
+      var cs=satirlar[a],xs=cs.map(function(c){return c.x;}),sol=Math.min.apply(null,xs.concat([ozetX])),sag=Math.max.apply(null,xs.concat([ozetX]));
+      ciz("M "+sol+" "+buslar[i]+" H "+sag);
+      cs.forEach(function(k){
+       var ucu=k.top-4;
+       ciz("M "+k.x+" "+buslar[i]+" V "+ucu);
+       var uc=document.createElementNS(ns,"path");uc.setAttribute("class","harita-agaci-ok-ucu");
+       uc.setAttribute("d","M "+(k.x-4)+" "+(ucu-5)+" L "+(k.x+4)+" "+(ucu-5)+" L "+k.x+" "+ucu+" Z");svg.appendChild(uc);
+      });
+     });
+     var dugum=document.createElementNS(ns,"circle");dugum.setAttribute("cx",ozetX);dugum.setAttribute("cy",ozetAlt);dugum.setAttribute("r","3");svg.appendChild(dugum);
+    }
+   }
+  }
+  dal.insertBefore(svg,ozet.nextSibling);
+ });
+}
+function haritaAgacLegacyHtml(eskiler,veri,ks,anahtar){
+ S.haritaLegacyKayitlari=eskiler;S.haritaLegacyVeri=veri;S.haritaLegacyKs=ks;
+ return '<details class="harita-agaci-detay-grup" data-h-tree-key="'+anahtar+'"'+(haritaAgacDurumuAcik(anahtar,false)?' open':'')+'>\
+ <summary>Bağımsız / eski görevler · '+eskiler.length+' · üst görev belirtilmemiş</summary>\
+ <div class="harita-legacy-kontrol"><label>Eski görevlerde ara<input type="search" data-harita-legacy-arama aria-label="Eski görevlerde ara" value="'+esc(S.haritaLegacyArama||"")+'" placeholder="Kimlik, başlık, durum veya atanan"></label><span class="harita-legacy-sayac" data-harita-legacy-sayac role="status" aria-live="polite" aria-atomic="true"></span></div>\
+ <div class="harita-legacy-listesi" id="harita-legacy-liste" role="list" aria-label="Bağımsız eski görev kayıtları"></div>\
+ <nav class="harita-legacy-sayfalar" aria-label="Eski görev sayfaları">\
+ <button type="button" data-tree-action="legacy-page" data-legacy-page="prev" aria-label="Önceki sayfa" aria-controls="harita-legacy-liste">‹ Önceki</button>\
+ <button type="button" data-tree-action="legacy-page" data-legacy-page="next" aria-label="Sonraki sayfa" aria-controls="harita-legacy-liste">Sonraki ›</button>\
+ <button type="button" data-tree-action="legacy-page" data-legacy-page="last" aria-label="Son sayfaya git" aria-controls="harita-legacy-liste">Son sayfa</button></nav></details>';
+}
+function haritaLegacySayfaBoyutu(){
+ return window.matchMedia&&window.matchMedia("(max-width:900px)").matches?24:50;
+}
+function haritaLegacySayfaBaslangici(sayfa,boyut,faz){
+ return faz>0?(sayfa<=0?0:faz+(sayfa-1)*boyut):sayfa*boyut;
+}
+function haritaLegacySayfaSayisi(adet,boyut,faz){
+ if(!adet)return 0;
+ var ilkDilim=faz>0?faz:boyut;
+ return 1+Math.ceil(Math.max(0,adet-ilkDilim)/boyut);
+}
+function haritaLegacySayfaIndeksi(konum,boyut,faz){
+ return faz>0?(konum<faz?0:1+Math.floor((konum-faz)/boyut)):Math.floor(konum/boyut);
+}
+function haritaLegacyAramaMetni(n,veri){
+ var g=n.g||{},gecmis=Array.isArray(g.gecmis)?g.gecmis.map(function(x){return [x.kimden,x.olay,x.not,x.ts].join(" ");}).join(" "):"";
+ return [JSON.stringify(g),"#"+g.id,g.kimden,kisiAd(veri,g.kimden),g.assignee,kisiAd(veri,g.assignee),
+  g.gorevli_kimlik,kisiAd(veri,g.gorevli_kimlik),g.detay,gecmis].join(" ").toLocaleLowerCase("tr-TR");
+}
+function haritaLegacyEslesenler(q,veri){
+ var aranacak=String(q||"").trim().toLocaleLowerCase("tr-TR");
+ if(aranacak.charAt(0)==="#")aranacak=aranacak.slice(1);
+ return (S.haritaLegacyKayitlari||[]).filter(function(n){
+  return !aranacak||haritaLegacyAramaMetni(n,veri).indexOf(aranacak)>=0;
+ });
+}
+function haritaLegacyKartHtml(n,veri,ks){
+ var arama=haritaLegacyAramaMetni(n,veri);
+ return '<div class="harita-legacy-kart" role="listitem" data-harita-legacy-item data-legacy-search="'+esc(arama)+'">'+
+  haritaGorevHtml(n.g,veri,ks,"Eski kayıt · bağımsız",true)+'</div>';
+}
+function haritaLegacyListeUygula(el){
+ var grup=el.querySelector('[data-h-tree-key="group:legacy"]');if(!grup)return;
+ var input=grup.querySelector("[data-harita-legacy-arama]"),q=(input?input.value:S.haritaLegacyArama||"").trim().toLocaleLowerCase("tr-TR");
+ var veri=S.haritaLegacyVeri||S.veri||{},ks=S.haritaLegacyKs||veri.kullanicilar||{},boyut=haritaLegacySayfaBoyutu();
+ var eslesen=haritaLegacyEslesenler(q,veri),adet=eslesen.length;
+ if(S.haritaLegacySonBoyut&&S.haritaLegacySonBoyut!==boyut){
+  S.haritaLegacyAnkor=Math.min(Math.max(0,S.haritaLegacyAnkor||0),Math.max(0,adet-1));
+  S.haritaLegacyFaz=S.haritaLegacyAnkor%boyut;
+  S.haritaLegacySayfa=haritaLegacySayfaIndeksi(S.haritaLegacyAnkor,boyut,S.haritaLegacyFaz);
+ }
+ S.haritaLegacySonBoyut=boyut;
+ var sayfaSayisi=haritaLegacySayfaSayisi(adet,boyut,S.haritaLegacyFaz);
+ S.haritaLegacySayfa=Math.max(0,Math.min(S.haritaLegacySayfa,sayfaSayisi-1));
+ if(S.haritaLegacyAnkor===null||S.haritaLegacyAnkor===undefined)S.haritaLegacyAnkor=S.haritaLegacySayfa*boyut;
+ var baslangic=haritaLegacySayfaBaslangici(S.haritaLegacySayfa,boyut,S.haritaLegacyFaz);
+ var dilimBoyutu=S.haritaLegacyFaz>0&&S.haritaLegacySayfa===0?S.haritaLegacyFaz:boyut;
+ var gosterilecek=eslesen.slice(baslangic,baslangic+dilimBoyutu),gosterilen=gosterilecek.length;
+ var liste=grup.querySelector(".harita-legacy-listesi");
+ if(liste)liste.innerHTML=gosterilecek.map(function(n){return haritaLegacyKartHtml(n,veri,ks);}).join("");
+ var sayac=grup.querySelector("[data-harita-legacy-sayac]");
+ var onceki=grup.querySelector('[data-legacy-page="prev"]'),sonraki=grup.querySelector('[data-legacy-page="next"]'),son=grup.querySelector('[data-legacy-page="last"]');
+ var aralik=adet?((baslangic+1)+"–"+(baslangic+gosterilen)+" / "+adet+" "+(q?"eşleşen görev":"görev")+" gösteriliyor"):"0 sonuç bulundu";
+ var sayfaMetni="sayfa "+(sayfaSayisi?S.haritaLegacySayfa+1:0)+"/"+sayfaSayisi;
+ if(sayac)sayac.textContent=adet?aralik+" · "+sayfaMetni:aralik;
+ if(onceki)onceki.disabled=S.haritaLegacySayfa<=0;
+ if(sonraki)sonraki.disabled=S.haritaLegacySayfa>=sayfaSayisi-1;
+ if(son)son.disabled=S.haritaLegacySayfa>=sayfaSayisi-1||sayfaSayisi===0;
+}
+function haritaCiz(veri,ks,kimlikler){
+ var el=document.getElementById("b-harita"),gs=veri.gorevler||[];
+ var eski=el.querySelector(".harita-kaydir");
+ var scrollLeft=eski?eski.scrollLeft:0,scrollTop=eski?eski.scrollTop:0;
+ var kisiDetay=el.querySelector(".harita-kisi-iliskileri");
+ if(kisiDetay)S.haritaKisilerAcik=kisiDetay.open;
+ Array.prototype.forEach.call(el.querySelectorAll("[data-h-tree-key]"),function(d){
+  S.haritaDallar[d.getAttribute("data-h-tree-key")]=d.open;
+ });
+ var aktif=document.activeElement,odakGorev=null,odakKisi=null,odakDal=null,odakDugme=null,odakLegacySayfa=null,odakKisiGrubu=false,odakLegacyArama=false;
+ if(aktif&&el.contains(aktif)&&aktif.closest){
+  var odakKart=aktif.closest(".harita-gorev");
+  if(odakKart)odakGorev=odakKart.getAttribute("data-h-gorev");
+  var odakKisisi=aktif.closest("[data-h-denetci],[data-h-isci]");
+  if(odakKisisi)odakKisi={tur:odakKisisi.hasAttribute("data-h-denetci")?"denetci":"isci",
+   id:odakKisisi.getAttribute(odakKisisi.hasAttribute("data-h-denetci")?"data-h-denetci":"data-h-isci")};
+  var odakSummary=aktif.closest("summary");
+  if(odakSummary&&odakSummary.parentElement.hasAttribute("data-h-tree-key"))
+   odakDal=odakSummary.parentElement.getAttribute("data-h-tree-key");
+  var odakKontrol=aktif.closest("[data-tree-action]");
+  if(odakKontrol&&odakKontrol.hasAttribute("data-legacy-page"))odakLegacySayfa=odakKontrol.getAttribute("data-legacy-page");
+  else if(odakKontrol)odakDugme=odakKontrol.getAttribute("data-tree-action");
+  odakLegacyArama=!!aktif.closest("[data-harita-legacy-arama]");
+  odakKisiGrubu=!!(odakSummary&&odakSummary.parentElement.classList.contains("harita-kisi-iliskileri"));
+ }
+ if(!kimlikler.length&&!gs.length){
+  el.innerHTML=S.hata?'<div class="harita-uyari">Panel bağlantısı kesik. Son snapshot boş; Yuva’da üye veya görev olmadığını şu anda doğrulayamıyorum.</div>':'<div class="empty">Henüz Yuva üyesi veya görev yok.</div>';
+  S.haritaRenderAnahtari=null;return;
+ }
+ var rolSirasi={denetci:0,goreci:1,isci:2};
+ kimlikler=kimlikler.slice().sort(function(a,b){
+  var ra=rolSirasi[ks[a]&&ks[a].rol],rb=rolSirasi[ks[b]&&ks[b].rol];
+  if(ra===undefined)ra=3;if(rb===undefined)rb=3;
+  return ra-rb||String(a).localeCompare(String(b));
+ });
+ var denetciler=kimlikler.filter(function(k){return (ks[k]||{}).rol==="denetci";});
+ if(S.haritaSeciliDenetci&&denetciler.indexOf(S.haritaSeciliDenetci)<0)S.haritaSeciliDenetci=null;
+ var ekipSirasi=denetciler.slice().sort(function(a,b){return String(a).localeCompare(String(b));});
+ var ekipGorunumu=haritaEkipGorunumu(veri,ks,ekipSirasi);
+ var digerKimlikler=kimlikler.filter(function(k){return !rolSirasi.hasOwnProperty((ks[k]||{}).rol);});
+ var digerHtml=digerKimlikler.length?'<h4 class="harita-bolum-baslik">Diğer roller · '+digerKimlikler.length+
+  '</h4>'+haritaRolKatmani("Diğer roller","diger",digerKimlikler,veri,ks,gs,"Rolü belirtilmeyen veya tanınmayan kimlikler"):"";
+ var model=haritaAgaciModeli(gs),dugmler=model.dugmler;
+ var kokler=dugmler.filter(function(n){return !n.uyari&&!n.ust&&!n.legacy;});
+ var eskiler=dugmler.filter(function(n){return !n.uyari&&!n.ust&&n.legacy;});
+ var uyarilar=model.uyarilar,aktifKokler=kokler.filter(function(n){return n.g.durum!=="verified"&&n.g.durum!=="dropped";});
+ var tamamlananKokler=kokler.filter(function(n){return n.g.durum==="verified"||n.g.durum==="dropped";});
+ var html='<div class="harita-kaydir" role="region" aria-label="Görev akış ağacı; kaydırılabilir görünüm" tabindex="0"><div class="harita-yuzey" id="harita-yuzey"><div class="harita-icerik">'+
+  '<div class="harita-baslik"><h2>Görev akış haritası</h2><span class="ipucu">Mavi bağlantılar kayıtlı üst görev ilişkilerini izler. Açan, atanan ve kontrol bilgileri kartlarda; ekip bağları ayrı görünümde.</span></div>';
+ if(S.hata)html+='<div class="harita-uyari">Panel verisi kesik; kişiler ve görevler son alınan kayıttan gösteriliyor, bağlantı durumu doğrulanamıyor.</div>';
+ html+='<section class="harita-agaci" aria-labelledby="harita-agaci-baslik"><div class="harita-agaci-baslik"><h3 id="harita-agaci-baslik">Görev akışı · '+gs.length+' görev</h3><div class="harita-agaci-kontrol">'+
+  '<button type="button" data-tree-action="ac">Dalları aç</button><button type="button" data-tree-action="kapat">Dalları kapat</button></div></div>'+
+  '<div class="harita-iliski-efsane"><span><i class="harita-iliski-cizgi" aria-hidden="true"></i>Üst görev oku</span><span class="harita-iliski-bilgi acan">Açan</span><span class="harita-iliski-bilgi atanan">Atanan</span><span class="harita-iliski-bilgi kontrol">İlk kontrol</span></div>';
+ if(aktifKokler.length){
+  html+='<h4 class="harita-bolum-baslik">Görev kökleri · '+aktifKokler.length+'</h4>'+haritaAgacKoklerHtml(aktifKokler,veri,ks,"Kök görev");
+ }
+ if(tamamlananKokler.length){
+  var tamamKey="group:completed";
+  html+='<details class="harita-agaci-detay-grup" data-h-tree-key="'+tamamKey+'"'+(haritaAgacDurumuAcik(tamamKey,false)?' open':'')+'><summary>Onaylı / iptal akışları · '+tamamlananKokler.length+' kök</summary>'+haritaAgacKoklerHtml(tamamlananKokler,veri,ks,"Tamamlanan kök")+'</details>';
+ }
+ if(eskiler.length){
+  var legacyKey="group:legacy";
+  html+=haritaAgacLegacyHtml(eskiler,veri,ks,legacyKey);
+ }
+ if(uyarilar.length){
+  var warningKey="group:warning";
+  html+='<details class="harita-agaci-detay-grup" data-h-tree-key="'+warningKey+'"'+(haritaAgacDurumuAcik(warningKey,false)?' open':'')+'><summary>İlişki uyarıları · '+uyarilar.length+' görev · kenar çizilmedi</summary><div class="harita-agaci-kokleri" role="list" aria-label="Bağlantı uyarılı görevler">';
+  uyarilar.forEach(function(n){html+='<section class="harita-agaci-kok" role="listitem" aria-label="Görev #'+esc(n.g.id)+' bağlantı uyarısı"><div class="harita-agaci-uyari">'+esc(n.uyari)+'</div>'+haritaGorevHtml(n.g,veri,ks,"Bağlantısız · uyarı")+haritaAgacDalHtml(n,veri,ks)+'</section>';});
+  html+='</div></details>';
+ }
+ if(!gs.length)html+='<div class="harita-bos">Görev kaydı yok.</div>';
+ html+='</section><details class="harita-kisi-iliskileri"'+(S.haritaKisilerAcik?' open':'')+'><summary>Kişi ve ekip ilişkileri · sorumlu_kimlik kayıtları</summary>'+
+  '<div class="harita-kisi-iliskileri-icerik">'+haritaDenetciIliskileriHtml(veri,ks,gs,denetciler)+
+  '<h4 class="harita-bolum-baslik">Görevli ve işçi ekipleri</h4>'+(ekipGorunumu.html||'<div class="harita-bos">Ekip ilişkisi bulunamadı.</div>')+
+  digerHtml+'</div></details></div></div></div>';
+ var renderAnahtari=JSON.stringify({hata:!!S.hata,kisiler:kimlikler.map(function(k){var v=ks[k]||{};return [k,v.ad||k,v.rol||"",v.arac||"",!!v.online,!!v.bas_denetci,v.sorumlu_kimlik||""]; }),
+  gorevler:gs.map(function(g){return [g.id,g.baslik||"Başlıksız görev",g.detay||"",g.gecmis||[],g.durum,g.kimden||"",g.assignee||"",g.gorevli_kimlik||"",Object.prototype.hasOwnProperty.call(g,"ust_gorev_id"),g.ust_gorev_id];})});
+ if(S.haritaRenderAnahtari===renderAnahtari&&el.querySelector(".harita-yuzey")){
+  haritaKimlikDurumunuGuncelle(el,ks);haritaEkipSeciminiGuncelle(el);return;
+ }
+ S.haritaRenderAnahtari=renderAnahtari;el.innerHTML=html;haritaLegacyListeUygula(el);
+ var yeni=el.querySelector(".harita-kaydir");yeni.scrollLeft=scrollLeft;yeni.scrollTop=scrollTop;
+ if(odakDal!==null){
+  Array.prototype.some.call(el.querySelectorAll("[data-h-tree-key] > summary"),function(n){
+   if(n.parentElement.getAttribute("data-h-tree-key")===odakDal){n.focus({preventScroll:true});return true;}return false;
+  });
+ }else if(odakLegacySayfa!==null){
+  var pagerOdagi=el.querySelector('[data-legacy-page="'+odakLegacySayfa+'"]');
+  if(pagerOdagi&&pagerOdagi.disabled)pagerOdagi=el.querySelector(odakLegacySayfa==="prev"?'[data-legacy-page="next"]':'[data-legacy-page="prev"]');
+  if(pagerOdagi&&!pagerOdagi.disabled)pagerOdagi.focus({preventScroll:true});
+  else{var legacyAramaOdagi=el.querySelector("[data-harita-legacy-arama]");if(legacyAramaOdagi)legacyAramaOdagi.focus({preventScroll:true});}
+ }else if(odakDugme!==null){
+  Array.prototype.some.call(el.querySelectorAll("[data-tree-action]"),function(n){if(n.getAttribute("data-tree-action")===odakDugme){n.focus({preventScroll:true});return true;}return false;});
+ }else if(odakLegacyArama){var aramaOdagi=el.querySelector("[data-harita-legacy-arama]");if(aramaOdagi)aramaOdagi.focus({preventScroll:true});
+ }else if(odakKisiGrubu){var ozet=el.querySelector(".harita-kisi-iliskileri>summary");if(ozet)ozet.focus({preventScroll:true});
+ }else if(odakGorev!==null){
+  Array.prototype.some.call(el.querySelectorAll(".harita-gorev"),function(n){if(n.getAttribute("data-h-gorev")===odakGorev){n.focus({preventScroll:true});return true;}return false;});
+ }else if(odakKisi){
+  var q=odakKisi.tur==="denetci"?"data-h-denetci":"data-h-isci",n=null;
+  Array.prototype.some.call(el.querySelectorAll("["+q+"]"),function(x){if(x.getAttribute(q)===odakKisi.id){n=x;return true;}return false;});
+  if(n)n.focus({preventScroll:true});
+ }
+ Array.prototype.forEach.call(el.querySelectorAll("[data-h-tree-key]"),function(d){
+  d.addEventListener("toggle",function(){S.haritaDallar[d.getAttribute("data-h-tree-key")]=d.open;
+   requestAnimationFrame(function(){haritaAgacBaglariniCiz(el);});});
+ });
+ var kisiIliskileri=el.querySelector(".harita-kisi-iliskileri");
+ if(kisiIliskileri)kisiIliskileri.addEventListener("toggle",function(){S.haritaKisilerAcik=kisiIliskileri.open;});
+ el.querySelectorAll("[data-tree-action]").forEach(function(b){b.addEventListener("click",function(){
+  var eylem=b.getAttribute("data-tree-action");
+  var legacySayfa=b.getAttribute("data-legacy-page");
+  if(legacySayfa){
+   var veri=S.haritaLegacyVeri||S.veri||{},toplam=haritaLegacyEslesenler(S.haritaLegacyArama,veri).length;
+   var boyut=haritaLegacySayfaBoyutu();
+   var sonSayfa=Math.max(0,haritaLegacySayfaSayisi(toplam,boyut,S.haritaLegacyFaz)-1);
+   if(legacySayfa==="prev")S.haritaLegacySayfa=Math.max(0,S.haritaLegacySayfa-1);
+   else if(legacySayfa==="next")S.haritaLegacySayfa=Math.min(sonSayfa,S.haritaLegacySayfa+1);
+   else if(legacySayfa==="last")S.haritaLegacySayfa=sonSayfa;
+   S.haritaLegacyAnkor=haritaLegacySayfaBaslangici(S.haritaLegacySayfa,haritaLegacySayfaBoyutu(),S.haritaLegacyFaz);
+   haritaLegacyListeUygula(el);
+   var grup=b.closest('[data-h-tree-key="group:legacy"]'),odak=b.disabled?grup.querySelector(legacySayfa==="prev"?'[data-legacy-page="next"]':'[data-legacy-page="prev"]'):b;
+   if(odak&&!odak.disabled)odak.focus({preventScroll:true});return;
+  }
+  var ac=eylem==="ac";
+  el.querySelectorAll("[data-h-tree-key]").forEach(function(d){d.open=ac;S.haritaDallar[d.getAttribute("data-h-tree-key")]=ac;});
+  requestAnimationFrame(function(){haritaAgacBaglariniCiz(el);});
+ });});
+ haritaEkipSeciminiGuncelle(el);
+ requestAnimationFrame(function(){haritaAgacBaglariniCiz(el);});
+}
+function haritaBaglariCiz(){
+ var yuzey=document.getElementById("harita-yuzey");
+ var svg=document.getElementById("harita-baglar");
+ var oklar=document.getElementById("harita-oklar");
+ if(!yuzey||!svg||!oklar||!yuzey.getBoundingClientRect().width)return;
+ if(window.matchMedia&&window.matchMedia("(max-width:700px)").matches){
+  while(svg.firstChild)svg.removeChild(svg.firstChild);
+  while(oklar.firstChild)oklar.removeChild(oklar.firstChild);
+  return;
+ }
+ while(svg.firstChild)svg.removeChild(svg.firstChild);
+ while(oklar.firstChild)oklar.removeChild(oklar.firstChild);
+ var kutu=yuzey.getBoundingClientRect();
+ var genislik=yuzey.scrollWidth, yukseklik=yuzey.scrollHeight;
+ svg.setAttribute("viewBox","0 0 "+genislik+" "+yukseklik);
+ svg.setAttribute("width",genislik); svg.setAttribute("height",yukseklik);
+ oklar.setAttribute("viewBox","0 0 "+genislik+" "+yukseklik);
+ oklar.setAttribute("width",genislik); oklar.setAttribute("height",yukseklik);
+ var kisiDugumleri=Object.create(null), ns="http://www.w3.org/2000/svg";
+ function hedefOku(x,y,renk,kimlik,bag){
+  var ok=document.createElementNS(ns,"path");
+  ok.setAttribute("class","harita-ok-hedef");
+  ok.setAttribute("d","M "+(x-5)+" "+(y-8)+" L "+(x+5)+" "+(y-8)+" L "+x+" "+(y+1)+" Z");
+  ok.setAttribute("fill",renk);
+  ok.setAttribute("data-h-kimlik",kimlik);
+  if(bag.tur)ok.setAttribute("data-h-"+bag.tur,bag.deger);
+  if(bag.gorev)ok.setAttribute("data-h-gorev",bag.gorev);
+  oklar.appendChild(ok);
+  return ok;
+ }
+ Array.prototype.forEach.call(yuzey.querySelectorAll("[data-h-kisi]"),function(n){
+  kisiDugumleri[n.getAttribute("data-h-kisi")]=n;
+ });
+ Array.prototype.forEach.call(yuzey.querySelectorAll("[data-h-ust]"),function(n){
+  var ustId=n.getAttribute("data-h-ust"),ust=kisiDugumleri[ustId];
+  if(!ust)return;
+  var ustKutusu=ust.getBoundingClientRect(),altKutusu=n.getBoundingClientRect();
+  var x1=ustKutusu.left+ustKutusu.width/2-kutu.left;
+  var y1=ustKutusu.bottom-kutu.top;
+  var x2=altKutusu.left+altKutusu.width/2-kutu.left;
+  var y2=altKutusu.top-kutu.top-3;
+  var ara=y1+(y2-y1)*0.55;
+  var renk=getComputedStyle(n).getPropertyValue("--ekip-renk").trim()||"#d2a8ff";
+  var secili=S.haritaSeciliDenetci===ustId;
+  var hiyerarsi=document.createElementNS(ns,"path");
+  hiyerarsi.setAttribute("class","harita-hiyerarsi"+(secili?" secili":""));
+  hiyerarsi.setAttribute("data-h-ust",ustId);
+  hiyerarsi.setAttribute("stroke",renk);
+  hiyerarsi.setAttribute("d","M "+x1+" "+y1+" C "+x1+" "+ara+", "+x2+" "+ara+", "+x2+" "+y2);
+  svg.appendChild(hiyerarsi);
+  var ucu=document.createElementNS(ns,"circle");
+  ucu.setAttribute("class","harita-hiyerarsi-ucu");
+  ucu.setAttribute("cx",x2); ucu.setAttribute("cy",y2); ucu.setAttribute("r",3.5);
+  ucu.setAttribute("stroke",renk); svg.appendChild(ucu);
+  var ok=hedefOku(x2,altKutusu.top-kutu.top,renk,n.getAttribute("data-h-kisi"),
+   {tur:"ust",deger:ustId});
+  ok.classList.toggle("secili",secili);
+ });
+ Array.prototype.forEach.call(yuzey.querySelectorAll("[data-h-sorumlu]"),function(n){
+  var sorumlu=n.getAttribute("data-h-sorumlu"),denetci=kisiDugumleri[sorumlu];
+  if(!denetci)return;
+  var denetciKutusu=denetci.getBoundingClientRect(),uyeKutusu=n.getBoundingClientRect();
+  var x1=denetciKutusu.left+denetciKutusu.width/2-kutu.left;
+  var y1=denetciKutusu.bottom-kutu.top;
+  var x2=uyeKutusu.left+uyeKutusu.width/2-kutu.left;
+  var y2=uyeKutusu.top-kutu.top-3;
+  var ara=y1+(y2-y1)*0.55;
+  var renk=getComputedStyle(n).getPropertyValue("--ekip-renk").trim()||"#d2a8ff";
+  var secili=S.haritaSeciliDenetci===sorumlu;
+  var hiyerarsi=document.createElementNS(ns,"path");
+  hiyerarsi.setAttribute("class","harita-hiyerarsi"+(secili?" secili":""));
+  hiyerarsi.setAttribute("data-h-sorumlu",sorumlu);
+  hiyerarsi.setAttribute("stroke",renk);
+  hiyerarsi.setAttribute("d","M "+x1+" "+y1+" C "+x1+" "+ara+", "+x2+" "+ara+", "+x2+" "+y2);
+  svg.appendChild(hiyerarsi);
+  var ucu=document.createElementNS(ns,"circle");
+  ucu.setAttribute("class","harita-hiyerarsi-ucu");
+  ucu.setAttribute("cx",x2); ucu.setAttribute("cy",y2); ucu.setAttribute("r",3.5);
+  ucu.setAttribute("stroke",renk); svg.appendChild(ucu);
+  var ok=hedefOku(x2,uyeKutusu.top-kutu.top,renk,n.getAttribute("data-h-kisi"),
+   {tur:"sorumlu",deger:sorumlu});
+  ok.classList.toggle("secili",secili);
+ });
+ Array.prototype.forEach.call(yuzey.querySelectorAll("[data-h-gorev]"),function(g){
+  if(g.closest("details:not([open])"))return;
+  var gorevKutusu=g.getBoundingClientRect();
+  var iliskiler=[
+   {kimlik:g.getAttribute("data-h-kimden"),tur:"acan",ofset:-9},
+   {kimlik:g.getAttribute("data-h-assignee"),tur:"atanan",ofset:9}
+  ];
+  iliskiler.forEach(function(i){
+   var kisi=kisiDugumleri[i.kimlik];
+   if(!i.kimlik||!kisi)return;
+   var kisiKutusu=kisi.getBoundingClientRect();
+   var x1=kisiKutusu.left+kisiKutusu.width/2-kutu.left+i.ofset;
+   var y1=kisiKutusu.bottom-kutu.top;
+   var x2=gorevKutusu.left-kutu.left+gorevKutusu.width*(i.tur==="acan" ? .28 : .72);
+   var y2=gorevKutusu.top-kutu.top-3;
+   var aralik=Math.max(0,y2-y1);
+   var xKontrol=y1+Math.min(44,aralik*.3);
+   var yKontrol=y2-Math.min(26,aralik*.12);
+   var yol=document.createElementNS(ns,"path");
+   yol.setAttribute("class","harita-cizgi "+i.tur);
+   yol.setAttribute("data-h-kimlik",i.kimlik);
+   yol.setAttribute("data-h-gorev",g.getAttribute("data-h-gorev"));
+   yol.setAttribute("d","M "+x1+" "+y1+" C "+x1+" "+xKontrol+", "+x2+" "+yKontrol+", "+x2+" "+y2);
+   svg.appendChild(yol);
+   hedefOku(x2,gorevKutusu.top-kutu.top,i.tur==="acan"?"#8b949e":"#58a6ff",i.kimlik,
+    {tur:"gorev",deger:g.getAttribute("data-h-gorev"),gorev:g.getAttribute("data-h-gorev")});
+  });
+ });
+}
+
+function haritaBaglantisiniVurgula(tur,kimlik){
+ var yuzey=document.getElementById("harita-yuzey");
+ if(!yuzey)return;
+ yuzey.classList.toggle("bag-vurgu",!!tur);
+ Array.prototype.forEach.call(yuzey.querySelectorAll(".baglanti-vurgulu"),function(n){
+  n.classList.remove("baglanti-vurgulu");
+ });
+ if(!tur)return;
+ var eslesme=function(secici,ozellik,deger){
+  var bulunan=[];
+  Array.prototype.forEach.call(yuzey.querySelectorAll(secici),function(n){
+   if(n.getAttribute(ozellik)===deger)bulunan.push(n);
+  });
+  return bulunan;
+ };
+ var gorevler=Object.create(null),kisiler=Object.create(null);
+ if(tur==="gorev"){
+  eslesme("[data-h-gorev]","data-h-gorev",kimlik).forEach(function(n){
+   if(n.matches(".harita-gorev"))n.classList.add("baglanti-vurgulu");
+   if(n.matches(".harita-cizgi,.harita-ok-hedef")){
+    n.classList.add("baglanti-vurgulu");
+    kisiler[n.getAttribute("data-h-kimlik")]=true;
+   }
+  });
+  Object.keys(kisiler).forEach(function(k){
+   eslesme("[data-h-kisi]","data-h-kisi",k).forEach(function(n){n.classList.add("baglanti-vurgulu");});
+  });
+ }else{
+  eslesme("[data-h-kisi]","data-h-kisi",kimlik).forEach(function(n){n.classList.add("baglanti-vurgulu");});
+  eslesme(".harita-cizgi,.harita-ok-hedef","data-h-kimlik",kimlik).forEach(function(n){
+   n.classList.add("baglanti-vurgulu");
+   gorevler[n.getAttribute("data-h-gorev")]=true;
+  });
+  Object.keys(gorevler).forEach(function(id){
+   eslesme(".harita-gorev","data-h-gorev",id).forEach(function(n){n.classList.add("baglanti-vurgulu");});
+  });
+ }
+}
+
+function haritaBaglantisiEtkilesimi(ev,acik){
+ var kart=ev.target.closest?ev.target.closest(".harita-yuzey [data-h-gorev],.harita-yuzey [data-h-kisi]"):null;
+ if(!kart)return;
+ if(!acik&&ev.relatedTarget&&kart.contains(ev.relatedTarget))return;
+ if(kart.matches(".harita-gorev")){
+  var yuzey=document.getElementById("harita-yuzey");
+  if(!yuzey)return;
+  Array.prototype.forEach.call(yuzey.querySelectorAll(".task-baglanti-vurgulu"),function(n){n.classList.remove("task-baglanti-vurgulu");});
+  yuzey.classList.toggle("task-vurgu",acik);
+  if(!acik)return;
+  var kartlar=Array.prototype.slice.call(yuzey.querySelectorAll(".harita-gorev"));
+  var byId=Object.create(null),byParent=Object.create(null),queue=[kart.getAttribute("data-h-gorev")],seen=Object.create(null);
+  kartlar.forEach(function(n){var id=n.getAttribute("data-h-gorev"),ust=n.getAttribute("data-h-ust-gorev");
+   if(id)byId[id]=n;if(ust)(byParent[ust]||(byParent[ust]=[])).push(id);});
+  while(queue.length){var id=queue.shift();if(seen[id])continue;seen[id]=true;
+   if(byId[id])byId[id].classList.add("task-baglanti-vurgulu");
+   var node=byId[id],ust=node&&node.getAttribute("data-h-ust-gorev");
+   if(ust&&byId[ust])queue.push(ust);
+   (byParent[id]||[]).forEach(function(child){queue.push(child);});
+  }
+  return;
+ }
+ if(acik){
+  var gorev=kart.matches(".harita-gorev");
+  haritaBaglantisiniVurgula(gorev?"gorev":"kisi",
+   kart.getAttribute(gorev?"data-h-gorev":"data-h-kisi"));
+ }else haritaBaglantisiniVurgula(null,null);
+}
+
+function haritaPanBaslat(ev){
+ var alan=ev.target.closest?ev.target.closest(".harita-kaydir"):null;
+ if(!alan||ev.pointerType==="touch"||ev.isPrimary===false||(ev.button!==undefined&&ev.button!==0))return;
+ S.haritaPan={alan:alan,id:ev.pointerId,x:ev.clientX,y:ev.clientY,
+  sol:alan.scrollLeft,ust:alan.scrollTop,basladi:false};
+}
+
+function haritaPanHareket(ev){
+ var p=S.haritaPan;
+ if(!p||p.id!==ev.pointerId)return;
+ var dx=ev.clientX-p.x,dy=ev.clientY-p.y;
+ if(!p.basladi&&Math.sqrt(dx*dx+dy*dy)<5)return;
+ if(!p.basladi){
+  p.basladi=true;p.alan.classList.add("surukleniyor");
+  try{p.alan.setPointerCapture(ev.pointerId);}catch(e){}
+ }
+ p.alan.scrollLeft=p.sol-dx;p.alan.scrollTop=p.ust-dy;
+ ev.preventDefault();
+}
+
+function haritaPanBitir(ev){
+ var p=S.haritaPan;
+ if(!p||p.id!==ev.pointerId)return;
+ p.alan.classList.remove("surukleniyor");
+ if(p.basladi){
+  S.haritaPanKlikEngelle=true;
+  window.setTimeout(function(){S.haritaPanKlikEngelle=false;},0);
+ }
+ try{if(p.alan.hasPointerCapture(ev.pointerId))p.alan.releasePointerCapture(ev.pointerId);}catch(e){}
+ S.haritaPan=null;
+}
+
+function haritaKartiAc(ev){
+ if(S.haritaPanKlikEngelle){ev.preventDefault();ev.stopPropagation();return;}
+ var denetci=ev.target.closest?ev.target.closest(".harita-kisi[data-h-denetci]"):null;
+ if(denetci){
+  var id=denetci.getAttribute("data-h-denetci");
+  S.haritaSeciliDenetci=S.haritaSeciliDenetci===id?null:id;
+  haritaEkipSeciminiGuncelle(document.getElementById("b-harita"));
+  return;
+ }
+ var kart=ev.target.closest?ev.target.closest(".harita-kisi[data-h-isci]"):null;
+ if(kart)haritaDetayAc(kart.getAttribute("data-h-isci"));
+}
+
+function haritaKlavye(ev){
+ var kaydirma=ev.target&&ev.target.closest?ev.target.closest(".harita-kaydir"):null;
+ if(kaydirma&&ev.target===kaydirma){
+  var ust=Math.max(0,kaydirma.scrollHeight-kaydirma.clientHeight),adim=Math.max(48,kaydirma.clientHeight-40),hedef=null;
+  if(ev.key==="PageDown")hedef=Math.min(ust,kaydirma.scrollTop+adim);
+  else if(ev.key==="PageUp")hedef=Math.max(0,kaydirma.scrollTop-adim);
+  else if(ev.key==="Home")hedef=0;
+  else if(ev.key==="End")hedef=ust;
+  if(hedef!==null){ev.preventDefault();kaydirma.scrollTop=hedef;return;}
+ }
+ if(ev.key!=="Enter"&&ev.key!==" ")return;
+ var denetci=ev.target.closest?ev.target.closest(".harita-kisi[data-h-denetci]"):null;
+ if(denetci){
+  ev.preventDefault();
+  var id=denetci.getAttribute("data-h-denetci");
+  S.haritaSeciliDenetci=S.haritaSeciliDenetci===id?null:id;
+  haritaEkipSeciminiGuncelle(document.getElementById("b-harita"));
+  return;
+ }
+ var kart=ev.target.closest?ev.target.closest(".harita-kisi[data-h-isci]"):null;
+ if(kart){ev.preventDefault();haritaDetayAc(kart.getAttribute("data-h-isci"));}
 }
 
 function ekranSecenekleri(ks,kimlikler){
@@ -660,14 +1912,62 @@ async function kisiGonder(yol,govde,mesajHata){
 }
 
 // ── olaylar ──────────────────────────────────────────────────────────
+document.getElementById("b-tahta").addEventListener("input",function(ev){
+ var arama=ev.target.closest?ev.target.closest("input[data-tahta-arama]"):null;
+ if(!arama)return;
+ var st=arama.getAttribute("data-tahta-arama"), durum=S.tahtaArsiv[st];
+ if(!durum)return;
+ durum.arama=arama.value;durum.limit=50;
+ tahtaArsivIcerikCiz(st);
+});
+document.getElementById("b-harita").addEventListener("input",function(ev){
+ var arama=ev.target.closest?ev.target.closest("[data-harita-legacy-arama]"):null;
+ if(!arama)return;
+ S.haritaLegacyArama=arama.value;S.haritaLegacySayfa=0;
+S.haritaLegacyAnkor=0;S.haritaLegacyFaz=0;
+ haritaLegacyListeUygula(document.getElementById("b-harita"));
+});
+document.getElementById("b-tahta").addEventListener("click",function(ev){
+ var devam=ev.target.closest?ev.target.closest("button[data-tahta-devam]"):null;
+ if(!devam)return;
+ var st=devam.getAttribute("data-tahta-devam"), durum=S.tahtaArsiv[st];
+ if(!durum)return;
+ durum.limit+=50;
+ tahtaArsivIcerikCiz(st);
+});
 document.getElementById("sekmeler").addEventListener("click",function(ev){
  var b=ev.target.closest?ev.target.closest("button[data-s]"):null;
  if(!b)return;
  S.sekme=b.getAttribute("data-s");
+ document.body.classList.toggle("harita-tam",S.sekme==="harita");
  Array.prototype.forEach.call(document.querySelectorAll(".sekme"),function(x){
   x.classList.toggle("aktif",x===b);});
- ["ekip","tahta","ekran"].forEach(function(s){
+ ["ekip","tahta","ekran","harita"].forEach(function(s){
   document.getElementById("b-"+s).classList.toggle("gizli",s!==S.sekme);});
+ if(S.sekme==="harita")requestAnimationFrame(function(){haritaBaglariCiz();haritaAgacBaglariniCiz(document.getElementById("b-harita"));});
+});
+window.addEventListener("resize",function(){
+ haritaLegacyListeUygula(document.getElementById("b-harita"));
+ if(S.sekme==="harita")requestAnimationFrame(function(){haritaBaglariCiz();haritaAgacBaglariniCiz(document.getElementById("b-harita"));});
+});
+
+var haritaAlani=document.getElementById("b-harita");
+haritaAlani.addEventListener("pointerdown",haritaPanBaslat);
+haritaAlani.addEventListener("pointermove",haritaPanHareket);
+haritaAlani.addEventListener("pointerup",haritaPanBitir);
+haritaAlani.addEventListener("pointercancel",haritaPanBitir);
+haritaAlani.addEventListener("lostpointercapture",haritaPanBitir);
+haritaAlani.addEventListener("pointerover",function(ev){haritaBaglantisiEtkilesimi(ev,true);});
+haritaAlani.addEventListener("pointerout",function(ev){haritaBaglantisiEtkilesimi(ev,false);});
+haritaAlani.addEventListener("focusin",function(ev){haritaBaglantisiEtkilesimi(ev,true);});
+haritaAlani.addEventListener("focusout",function(ev){haritaBaglantisiEtkilesimi(ev,false);});
+haritaAlani.addEventListener("click",haritaKartiAc);
+haritaAlani.addEventListener("keydown",haritaKlavye);
+document.getElementById("harita-detay-kapat").addEventListener("click",function(){
+ document.getElementById("harita-detay").close();
+});
+document.getElementById("harita-detay").addEventListener("click",function(ev){
+ if(ev.target===ev.currentTarget)ev.currentTarget.close();
 });
 
 document.getElementById("b-ekran").addEventListener("change",function(ev){
