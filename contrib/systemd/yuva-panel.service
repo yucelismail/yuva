@@ -1,11 +1,11 @@
 [Unit]
-Description=Yuva local web panel
+Description=Yuva panel UI and API (persistent user service)
 
 [Service]
 Type=simple
-WorkingDirectory=%h/yuva
+WorkingDirectory=%h/.local/opt/yuva/current
 Environment=YUVA_DIR=%h/yuva
-ExecStart=/usr/bin/python3 -u %h/yuva/panel/server.py --host 127.0.0.1 --port 8686
+ExecStart=/usr/bin/python3 -u %h/.local/opt/yuva/current/panel/server.py --host 127.0.0.1 --port 8686
 Restart=on-failure
 RestartSec=2s
 UMask=0077

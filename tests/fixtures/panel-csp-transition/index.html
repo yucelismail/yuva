@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; base-uri 'none'; object-src 'none'; script-src 'self'; script-src-attr 'none'; style-src 'self'; style-src-attr 'none'; img-src 'self' data:; connect-src 'self';">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yuva CSP sentetik fixture</title>
+  <link rel="stylesheet" href="allowed.css">
+  <style>
+    #inline-style-block { color: red; }
+  </style>
+</head>
+<body>
+  <h1>Yuva CSP sentetik fixture</h1>
+  <p id="external-style">Bu metin allowed.css tarafından yeşil olmalı.</p>
+  <p id="inline-style-block">Bu inline style bloğu nedeniyle kırmızı olmamalı.</p>
+  <p id="inline-style-attribute" style="color: red">
+    Bu inline style attribute nedeniyle kırmızı olmamalı.
+  </p>
+  <button id="inline-event" onclick="document.body.dataset.inlineEvent='ran'">
+    Inline event çalışmamalı
+  </button>
+  <button id="external-event">Dış script event'i çalışmalı</button>
+  <p id="external-script">Dış script henüz çalışmadı.</p>
+  <script>
+    document.body.dataset.inlineScript = "ran";
+  </script>
+  <script src="allowed.js" defer></script>
+</body>
+</html>

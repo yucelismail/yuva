@@ -2,18 +2,26 @@
 # 🪹 yuva — farklı CLI/oturumlardaki modellerin ortak çalışma alanı
 # Komutlar: baglan, kalp, kalp-dongu, ayril, ad, ekran, durum, katil, kimler,
 #           yaz, oku, gelen, tahta, sorumlu, bas-denetci,
-#           gorev ekle|ata|al|teslim|denetle|iptal,
-#           liste, protokol, panel
+#           auth init, auth provision,
+#           gorev ekle|ata|al|sonraki|teslim|denetle|iptal,
+#           wait, liste, protokol, panel
 import argparse
 import contextlib
+import contextvars
+from dataclasses import asdict
 import errno
 import fcntl
 import hashlib
+import heapq
+import importlib.util
 import json
 import os
 import random
+import re
 import select
+import shlex
 import shutil
+import socket
 import stat
 import subprocess
 import sys
@@ -31,26 +39,161 @@ BUS = KOK / "mesaj.jsonl"
 STATE = KOK / "durum.json"
 GOREV = KOK / "gorevler.json"
 EKRAN = KOK / "ekran"
+EKRAN_OKUMA_AZAMI_DOSYA = 128
+EKRAN_OKUMA_TOPLAM_BAYT = 8 * 1024 * 1024
+AUTH_MESAJ_SCOPELARI = frozenset({
+    "POST /api/katil", "POST /api/ayril", "POST /api/ad", "POST /api/rol",
+    "POST /api/yaz", "POST /api/sorumlu", "POST /api/bas-denetci",
+})
 CALISAN = Path(__file__).resolve()
+DATA_SCHEMA_VERSION = 1
+MESSAGE_SCHEMA_VERSIONS = frozenset({1, 2})
+WAIT_INBOX_MAX_BYTES = 8 * 1024 * 1024
+WAIT_RECORD_MAX_BYTES = 64 * 1024
+WAIT_INBOX_MAX_RECORDS = 10_000
+_WAIT_MODULE = None
+
+
+def _ekran_redaksiyon_modulu_yukle():
+    path = CODE_ROOT / "yuva_screen_redaction.py"
+    spec = importlib.util.spec_from_file_location("yuva_screen_redaction_cli", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("screen redaction module unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_EKRAN_REDAKSIYON = _ekran_redaksiyon_modulu_yukle()
 
 RENK = {"claude": "38;5;208", "codex": "36", "opencode": "35", "diger": "32"}
 ROL_AD = {"goreci": "görevli", "isci": "işçi", "denetci": "denetçi"}
 ROLLER = ("goreci", "isci", "denetci")
 ARACLAR = ("claude", "codex", "opencode", "diger")
+TURLER = ("not", "soru", "cevap", "rapor", "denetim", "gorev", "durum")
+MESAJ_KAYNAK_SINIFLARI = frozenset({"operator", "agent", "unknown"})
 DURUM_AD = {
     "pending": "sırada", "assigned": "atandı",
     "pending_gorevli_review": "görevli incelemesi",
     "pending_verification": "teslim✋", "verified": "onaylı✅",
     "pending_revision": "revize✎", "dropped": "iptal🗑",
 }
+GOREV_DURUMLARI = frozenset(DURUM_AD)
+PENDING_GOREV_ALT_SINIRI = 12
 PANEL_VARSAYILAN = "http://localhost:8686"
 HTTP_SN = 1.5
 PANEL_ONLINE_SN = 30
+PANEL_ONLINE_SN_MIN = 1
+PANEL_ONLINE_SN_MAX = 300
 KALP_ARALIK_UST = 20  # HTTP gecikmesi ve zamanlayıcı sapması için lease payı bırakır.
 
 
 class VeriHatasi(Exception):
     """Kalıcı JSON verisi okunamadığında/bozuk olduğunda yükseltilir."""
+
+
+def _schema_version_kontrolu(veri, dosya_adi, desteklenen):
+    version = veri.get("schema_version", 1)
+    if type(version) is not int or version not in desteklenen:
+        raise VeriHatasi(
+            f"{dosya_adi}: desteklenmeyen schema_version; veri değiştirilmedi")
+
+
+# The default local MVP trusts one OS account. In this mode --from is an
+# unverified audit label; authenticated deployments still require the HMAC
+# principal passed by the in-process API bridge.
+_GOREV_PRINCIPAL = contextvars.ContextVar("yuva_gorev_principal", default=None)
+
+
+def _gorev_principal_dogrula(a):
+    auth_etkin = os.environ.get("YUVA_AUTH_ENABLED")
+    if auth_etkin not in (None, "0", "1"):
+        sys.exit("görev mutasyonu reddedildi: YUVA_AUTH_ENABLED 0 veya 1 olmalı")
+    principal = _GOREV_PRINCIPAL.get()
+    actor = getattr(principal, "principal_id", None)
+    if principal is None:
+        if auth_etkin == "1":
+            sys.exit("görev mutasyonu reddedildi: auth açıkken doğrulanmış principal gerekli")
+        return
+    if (not isinstance(actor, str) or not actor
+            or getattr(principal, "scope", None) != "POST /api/gorev"
+            or getattr(a, "from_", None) != actor):
+        sys.exit("görev mutasyonu reddedildi: geçerli POST /api/gorev principal gerekli")
+
+
+def _gorev_rol_dogrula(a, rol):
+    kisi = durum_oku()["kullanicilar"].get(a.from_, {})
+    if kisi.get("rol") != rol:
+        sys.exit(f"görev mutasyonu reddedildi: {rol} rolündeki kayıtlı principal gerekli")
+
+
+def run_task_operation(islem, payload, actor, principal=None):
+    """Run a task operation under the local MVP or an authenticated principal.
+
+    With auth disabled, actor is an explicitly unverified local audit label.
+    With auth enabled, actor must come from the verified principal argument.
+    """
+    auth_etkin = os.environ.get("YUVA_AUTH_ENABLED")
+    if auth_etkin not in (None, "0", "1"):
+        raise PermissionError("YUVA_AUTH_ENABLED must be 0 or 1")
+    if not isinstance(actor, str) or not actor.strip():
+        raise PermissionError("task actor label required")
+    if principal is None and auth_etkin == "1":
+        raise PermissionError("auth enabled: verified task principal required")
+    if principal is not None and (
+            getattr(principal, "principal_id", None) != actor
+            or getattr(principal, "scope", None) != "POST /api/gorev"):
+        raise PermissionError("verified task principal does not match actor")
+    note = payload.get("not_")
+    args = {"from_": actor, "id": str(payload.get("id", "")),
+            "not_": str(note) if note is not None else None}
+    if islem == "ekle":
+        ata = payload.get("ata")
+        gorevli = payload.get("gorevli")
+        args.update(baslik=str(payload.get("baslik", "")),
+                    detay=str(payload.get("detay", "")),
+                    ata=coz_kimlik(ata) or ata,
+                    gorevli=coz_kimlik(gorevli) or gorevli,
+                    ust_gorev_id=payload.get("ust_gorev_id"))
+        fn = cmd_gorev_ekle
+    elif islem == "ata":
+        kime, gorevli = payload.get("kime"), payload.get("gorevli")
+        args.update(kime=(coz_kimlik(kime) or kime) if kime else None,
+                    gorevli=(coz_kimlik(gorevli) or gorevli) if gorevli else None)
+        fn = cmd_gorev_ata
+    elif islem == "al":
+        fn = cmd_gorev_al
+    elif islem == "sonraki":
+        fn = cmd_gorev_sonraki
+    elif islem == "teslim":
+        fn = cmd_gorev_teslim
+    elif islem == "ilk-kontrol":
+        args.update(onayla=payload.get("revize") is False,
+                    revize=payload.get("revize") is True)
+        fn = cmd_gorev_ilk_kontrol
+    elif islem == "denetle":
+        args.update(onayla=payload.get("revize") is False,
+                    revize=payload.get("revize") is True)
+        fn = cmd_gorev_denetle
+    elif islem == "iptal":
+        fn = cmd_gorev_iptal
+    else:
+        raise ValueError(f"geçersiz işlem: {islem}")
+    ns = argparse.Namespace(**args)
+    token = _GOREV_PRINCIPAL.set(principal)
+    try:
+        return fn(ns)
+    finally:
+        _GOREV_PRINCIPAL.reset(token)
+
+
+def run_verified_task(islem, payload, principal):
+    """Compatibility wrapper for authenticated in-process task mutations."""
+    if (not isinstance(getattr(principal, "principal_id", None), str)
+            or not principal.principal_id
+            or getattr(principal, "scope", None) != "POST /api/gorev"):
+        raise PermissionError("verified task principal required")
+    return run_task_operation(islem, payload, principal.principal_id, principal)
 
 
 def kalp_araligi(s):
@@ -69,16 +212,42 @@ def kalp_araligi(s):
 @contextlib.contextmanager
 def kilit_tut(sn=10.0):
     """Süreçler arası ortak .kilit flock kilidi (bağlam yöneticisi)."""
+    kok_fd = None
+    fd = None
     try:
-        KILIT.parent.mkdir(parents=True, exist_ok=True)
-        f = open(KILIT, "a+")
-    except OSError as e:
-        raise VeriHatasi(f"kilit dosyası açılamadı: {e}") from e
+        kok_fd = _guvenli_dizin_fd(KOK, olustur=True)
+        bayraklar = (os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
+                     | getattr(os, "O_CLOEXEC", 0))
+        for _ in range(3):
+            try:
+                fd = os.open(".kilit", bayraklar, dir_fd=kok_fd)
+                break
+            except FileNotFoundError:
+                try:
+                    fd = os.open(".kilit", bayraklar | os.O_CREAT | os.O_EXCL,
+                                 0o600, dir_fd=kok_fd)
+                    break
+                except FileExistsError:
+                    continue
+        if fd is None:
+            raise OSError(errno.EAGAIN, "kilit dosyası oluşturma yarışı")
+        bilgi = os.fstat(fd)
+        if (not stat.S_ISREG(bilgi.st_mode) or bilgi.st_uid != os.geteuid()
+                or stat.S_IMODE(bilgi.st_mode) != 0o600 or bilgi.st_nlink != 1):
+            raise VeriHatasi("kilit dosyası güvenli değil (tür/sahip/izin/link reddedildi)")
+    except BaseException as e:
+        if fd is not None:
+            os.close(fd)
+        if kok_fd is not None:
+            os.close(kok_fd)
+        if isinstance(e, OSError):
+            raise VeriHatasi(f"kilit dosyası açılamadı: {e}") from e
+        raise
     try:
         son = time.monotonic() + sn
         while True:
             try:
-                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
                 if time.monotonic() >= son:
@@ -87,16 +256,31 @@ def kilit_tut(sn=10.0):
                 time.sleep(0.05)
             except OSError as e:
                 raise VeriHatasi(f"kilit alınamadı: {e}") from e
+        try:
+            yol_bilgi = os.stat(".kilit", dir_fd=kok_fd, follow_symlinks=False)
+        except OSError as e:
+            raise VeriHatasi(f"kilit yolu kilit alındıktan sonra doğrulanamadı: {e}") from e
+        fd_bilgi = os.fstat(fd)
+        if ((fd_bilgi.st_dev, fd_bilgi.st_ino) != (yol_bilgi.st_dev, yol_bilgi.st_ino)
+                or not stat.S_ISREG(yol_bilgi.st_mode)
+                or yol_bilgi.st_uid != os.geteuid()
+                or stat.S_IMODE(yol_bilgi.st_mode) != 0o600
+                or yol_bilgi.st_nlink != 1):
+            raise VeriHatasi("kilit yolu, kilit fd'siyle eşleşmiyor veya güvenli değil")
         yield
     finally:
         try:
-            fcntl.flock(f, fcntl.LOCK_UN)
+            if fd is not None:
+                fcntl.flock(fd, fcntl.LOCK_UN)
         except OSError:
             pass
-        f.close()
+        if fd is not None:
+            os.close(fd)
+        if kok_fd is not None:
+            os.close(kok_fd)
 
 
-def yukle(p, varsayilan):
+def yukle(p, varsayilan, *, bos_varsayilan=True):
     """JSON okur; dosya yoksa varsayılan, varsa bozuklukta VeriHatasi verir."""
     p = Path(p)
     try:
@@ -106,6 +290,8 @@ def yukle(p, varsayilan):
     except (OSError, UnicodeError) as e:
         raise VeriHatasi(f"{p.name} okunamadı: {e}") from e
     if not metin.strip():
+        if not bos_varsayilan:
+            raise VeriHatasi(f"{p.name} boş JSON; dosya değiştirilmedi")
         return varsayilan
     try:
         veri = json.loads(metin)
@@ -119,6 +305,11 @@ def yukle(p, varsayilan):
 def kaydet(p, v):
     """Atomik yazım; çağıran gerekliyse kilit_tut() içinde olmalıdır."""
     p = Path(p)
+    if p in (STATE, GOREV):
+        if not isinstance(v, dict):
+            raise VeriHatasi(f"{p.name}: JSON nesnesi gerekli")
+        _schema_version_kontrolu(v, p.name, {DATA_SCHEMA_VERSION})
+        v.setdefault("schema_version", DATA_SCHEMA_VERSION)
     p.parent.mkdir(parents=True, exist_ok=True)
     try:
         mod = p.stat().st_mode & 0o777
@@ -166,10 +357,147 @@ def kaydet(p, v):
 
 def ekle_jsonl(yol, satir):
     yol = Path(yol)
-    yol.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        relative = yol.relative_to(KOK)
+    except ValueError as e:
+        raise VeriHatasi("JSONL yolu Yuva veri kökünün dışında") from e
+    if (len(relative.parts) == 1 and relative.name == BUS.name):
+        alt_dizin = None
+        dosya_adi = relative.name
+    elif (len(relative.parts) == 2 and relative.parts[0] == EKRAN.name
+          and relative.name.endswith(".jsonl")):
+        alt_dizin = EKRAN.name
+        dosya_adi = relative.name
+    else:
+        raise VeriHatasi("desteklenmeyen JSONL yolu")
+    if alt_dizin == EKRAN.name:
+        try:
+            satir = _EKRAN_REDAKSIYON.redact_screen_record(satir)
+        except _EKRAN_REDAKSIYON.ScreenRedactionError:
+            raise VeriHatasi(
+                "ekran kaydı güvenli biçimde işlenemedi; kayıt yazılmadı") from None
+    payload = (json.dumps(satir, ensure_ascii=False) + "\n").encode("utf-8")
+    kontrol_fd = _guvenli_dizin_fd(KOK, olustur=True)
+    os.close(kontrol_fd)
     with kilit_tut():
-        with open(yol, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(satir, ensure_ascii=False) + "\n")
+        kok_fd = _guvenli_dizin_fd(KOK, olustur=True)
+        try:
+            parent_fd = (_guvenli_alt_dizin_fd(kok_fd, alt_dizin, olustur=True)
+                         if alt_dizin else os.dup(kok_fd))
+            try:
+                flags = (os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW
+                         | getattr(os, "O_CLOEXEC", 0)
+                         | getattr(os, "O_NONBLOCK", 0))
+                try:
+                    fd = os.open(dosya_adi, flags | os.O_CREAT | os.O_EXCL,
+                                 0o600, dir_fd=parent_fd)
+                except FileExistsError:
+                    fd = os.open(dosya_adi, flags, dir_fd=parent_fd)
+                try:
+                    _jsonl_fd_dogrula(fd, dosya_adi)
+                    kalan = memoryview(payload)
+                    while kalan:
+                        try:
+                            yazilan = os.write(fd, kalan)
+                        except InterruptedError:
+                            continue
+                        if yazilan <= 0:
+                            raise OSError("JSONL append ilerlemedi")
+                        kalan = kalan[yazilan:]
+                finally:
+                    os.close(fd)
+            finally:
+                os.close(parent_fd)
+        finally:
+            os.close(kok_fd)
+
+
+def _dizin_fd_aciklama():
+    if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
+        raise VeriHatasi("güvenli JSONL için O_NOFOLLOW/O_DIRECTORY gerekli")
+    return (os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            | getattr(os, "O_CLOEXEC", 0))
+
+
+def _dizin_dogrula(fd, ad):
+    bilgi = os.fstat(fd)
+    if (not stat.S_ISDIR(bilgi.st_mode) or bilgi.st_uid != os.geteuid()
+            or stat.S_IMODE(bilgi.st_mode) != 0o700):
+        raise VeriHatasi(f"{ad} güvenli Yuva dizini değil (sahip/tür/izin reddedildi)")
+
+
+def _ata_yolu_dogrula(fd, ad):
+    bilgi = os.fstat(fd)
+    kip = stat.S_IMODE(bilgi.st_mode)
+    sticky = bool(bilgi.st_mode & stat.S_ISVTX)
+    if (not stat.S_ISDIR(bilgi.st_mode)
+            or (kip & 0o022 and not sticky)):
+        raise VeriHatasi(f"güvenli olmayan üst dizin: {ad}")
+
+
+def _guvenli_dizin_fd(yol, olustur=False):
+    absolute = os.path.abspath(os.fspath(yol))
+    if ".." in Path(absolute).parts:
+        raise VeriHatasi("Yuva dizin yolu üst dizin bileşeni içeremez")
+    parcalar = Path(absolute).parts
+    fd = os.open(os.sep, _dizin_fd_aciklama())
+    try:
+        _ata_yolu_dogrula(fd, os.sep)
+        for indeks, parca in enumerate(parcalar[1:]):
+            try:
+                yeni_fd = os.open(parca, _dizin_fd_aciklama(), dir_fd=fd)
+            except FileNotFoundError:
+                if not olustur:
+                    raise
+                try:
+                    os.mkdir(parca, 0o700, dir_fd=fd)
+                except FileExistsError:
+                    pass
+                yeni_fd = os.open(parca, _dizin_fd_aciklama(), dir_fd=fd)
+            try:
+                son = indeks == len(parcalar[1:]) - 1
+                if son:
+                    _dizin_dogrula(yeni_fd, absolute)
+                else:
+                    _ata_yolu_dogrula(yeni_fd, parca)
+            except BaseException:
+                os.close(yeni_fd)
+                raise
+            eski_fd = fd
+            fd = yeni_fd
+            os.close(eski_fd)
+        if len(parcalar) == 1:
+            raise VeriHatasi("Yuva veri kökü filesystem root olamaz")
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _guvenli_alt_dizin_fd(parent_fd, ad, olustur=False):
+    try:
+        fd = os.open(ad, _dizin_fd_aciklama(), dir_fd=parent_fd)
+    except FileNotFoundError:
+        if not olustur:
+            raise
+        try:
+            os.mkdir(ad, 0o700, dir_fd=parent_fd)
+        except FileExistsError:
+            pass
+        fd = os.open(ad, _dizin_fd_aciklama(), dir_fd=parent_fd)
+    try:
+        _dizin_dogrula(fd, ad)
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _jsonl_fd_dogrula(fd, ad):
+    bilgi = os.fstat(fd)
+    if (not stat.S_ISREG(bilgi.st_mode) or bilgi.st_uid != os.geteuid()
+            or stat.S_IMODE(bilgi.st_mode) != 0o600 or bilgi.st_nlink != 1):
+        raise VeriHatasi(f"{ad} güvenli JSONL dosyası değil (sahip/tür/izin/link reddedildi)")
 
 
 def simdi():
@@ -191,6 +519,7 @@ def guvenli(s):
 
 def durum_oku():
     d = yukle(STATE, {"kullanicilar": {}, "rev": 0})
+    _schema_version_kontrolu(d, STATE.name, {DATA_SCHEMA_VERSION})
     d.setdefault("kullanicilar", {})
     d.setdefault("rev", 0)
     if not isinstance(d["kullanicilar"], dict):
@@ -303,14 +632,6 @@ def bas_denetci_ata(d, kimlik, etkin):
     return None
 
 
-def kullanici_dokun(ad):
-    def _dokun(d):
-        k = d["kullanicilar"].setdefault(ad, {})
-        k["son_gorulme"] = simdi()
-        k.setdefault("katilma", simdi())
-    durum_guncelle(_dokun)
-
-
 def kime_norm(kime):
     """Hedefi '@hepsi' / '@<görünen ad>' biçimine getirir."""
     if not kime:
@@ -325,29 +646,208 @@ def kime_norm(kime):
     return "@" + (goster_ad(kk) if kk else hedef)
 
 
-def mesaj_ekle(kimden, metin, kime="@hepsi", tur="not"):
+def mesaj_ekle(kimden, metin, kime="@hepsi", tur="not", source_class="unknown"):
+    if source_class not in MESAJ_KAYNAK_SINIFLARI:
+        source_class = "unknown"
     m = {"id": uid(), "ts": simdi(), "kimden": kimden, "kime": kime_norm(kime),
-         "tur": tur, "metin": metin, "ad": goster_ad(kimden), "kanal": "sohbet"}
+         "tur": tur, "metin": metin, "ad": goster_ad(kimden), "kanal": "sohbet",
+         "schema_version": 2,
+         "source_class": source_class, "source_class_trust": "unverified",
+         "provenance": {"source": "cli_local", "trust": "unverified",
+                        "actor_id": None, "auth_method": "none",
+                        "identity_claim": {"value": str(kimden),
+                                           "source": "unknown",
+                                           "trust": "unverified",
+                                           "actor_id": None}}}
     ekle_jsonl(BUS, m)
-    kullanici_dokun(kimden)
     return m
+
+
+def _jsonl_tail_satirlari(yol, en_cok_satir, en_cok_bayt, en_cok_kayit_bayt,
+                          taranan_dondur=False):
+    """Dosyanın sonundaki LF ile tamamlanmış, bütçeli JSONL satırlarını oku."""
+    if en_cok_satir <= 0 or en_cok_bayt <= 0 or en_cok_kayit_bayt <= 0:
+        return ([], 0) if taranan_dondur else []
+    parcalar = []
+    taranan = 0
+    lf_sayisi = 0
+    with open(yol, "rb") as f:
+        cursor = os.fstat(f.fileno()).st_size
+        while cursor > 0 and taranan < en_cok_bayt and lf_sayisi < en_cok_satir + 1:
+            boyut = min(8192, cursor, en_cok_bayt - taranan)
+            cursor -= boyut
+            f.seek(cursor)
+            parca = f.read(boyut)
+            if len(parca) != boyut:
+                raise OSError("JSONL boyutu okunurken değişti")
+            parcalar.append(parca)
+            taranan += boyut
+            lf_sayisi += parca.count(b"\n")
+    veri = b"".join(reversed(parcalar))
+    if cursor > 0:
+        sinir = veri.find(b"\n")
+        if sinir < 0:
+            return ([], taranan) if taranan_dondur else []
+        veri = veri[sinir + 1:]
+    if veri and not veri.endswith(b"\n"):
+        son_lf = veri.rfind(b"\n")
+        veri = veri[:son_lf + 1] if son_lf >= 0 else b""
+    satirlar = veri.split(b"\n")
+    if satirlar and satirlar[-1] == b"":  # son LF kayıt ayıracıdır
+        satirlar.pop()
+    sonuc = []
+    for satir in satirlar[-en_cok_satir:]:
+        if satir and len(satir) <= en_cok_kayit_bayt:
+            sonuc.append(satir.decode("utf-8", errors="replace"))
+    return (sonuc, taranan) if taranan_dondur else sonuc
 
 
 def mesajlar(n=50, filtre=None):
     if not BUS.exists():
         return []
-    satirlar = BUS.read_text(encoding="utf-8", errors="replace").splitlines()[-n * 3:]
+    n = max(1, min(int(n), 400))
+    satirlar = _jsonl_tail_satirlari(
+        BUS, en_cok_satir=n * 3, en_cok_bayt=2 * 1024 * 1024,
+        en_cok_kayit_bayt=64 * 1024)
     ms = []
     for s in satirlar:
         try:
             m = json.loads(s)
         except Exception:
             continue
+        if not isinstance(m, dict):
+            continue
+        if "schema_version" in m and (
+                type(m["schema_version"]) is not int
+                or m["schema_version"] not in MESSAGE_SCHEMA_VERSIONS):
+            continue  # bilinmeyen şema legacy kabul edilmez ve yetki kazanmaz
+        provenance = m.get("provenance")
+        identity_claim = (provenance.get("identity_claim")
+                          if isinstance(provenance, dict) else None)
+        if _hmac_zarf_gecerli(m):
+            zarf = m["provenance"]
+            m.update(source="panel_api", trust="verified",
+                     actor_id=zarf["actor_id"], auth_method="hmac-sha256",
+                     provenance={k: zarf[k] for k in (
+                         "source", "trust", "actor_id", "auth_method",
+                         "identity_claim", "key_id", "audience", "scope", "timestamp")})
+            _source_class_normalize(m)
+            m.setdefault("ad", m.get("kimden"))
+            ms.append(m)
+            continue
+        schema2_valid = (
+            m.get("schema_version") == 2
+            and isinstance(provenance, dict)
+            and isinstance(provenance.get("source"), str)
+            and bool(provenance.get("source", "").strip())
+            and provenance.get("trust") == "unverified"
+            and provenance.get("actor_id") is None
+            and provenance.get("auth_method") == "none"
+            and isinstance(identity_claim, dict)
+            and isinstance(identity_claim.get("value"), str)
+            and identity_claim.get("source") == "unknown"
+            and identity_claim.get("trust") == "unverified"
+            and identity_claim.get("actor_id") is None)
+        if schema2_valid:
+            kaynak = provenance["source"]
+            iddia = identity_claim["value"]
+        else:
+            # Eski/bozuk satır yalnız okuma görünümünde güvenli zarfa alınır;
+            # JSONL arşivindeki orijinal satıra dokunulmaz.
+            m["schema_version"] = 1
+            kaynak = "unknown"
+            iddia = (identity_claim.get("value")
+                     if isinstance(identity_claim, dict)
+                     else m.get("kimden", "unknown"))
+            if not isinstance(iddia, str):
+                iddia = str(iddia)
+        m.update(schema_version=m.get("schema_version", 1), source=kaynak,
+                 trust="unverified", actor_id=None, auth_method="none",
+                 provenance={"source": kaynak, "trust": "unverified",
+                             "actor_id": None, "auth_method": "none",
+                             "identity_claim": {"value": iddia,
+                                                "source": "unknown",
+                                                "trust": "unverified",
+                                                "actor_id": None}})
+        _source_class_normalize(m)
         m.setdefault("ad", m.get("kimden"))
         ms.append(m)
     if filtre:
         ms = [m for m in ms if filtre(m)]
     return ms[-n:]
+
+
+def _source_class_normalize(message):
+    """Keep source class as an explicitly unverified claim; legacy is unknown."""
+    claimed = message.get("source_class")
+    message["source_class"] = (claimed if isinstance(claimed, str)
+                               and claimed in MESAJ_KAYNAK_SINIFLARI else "unknown")
+    message["source_class_trust"] = "unverified"
+
+
+def _hmac_zarf_gecerli(m):
+    """Validate envelope consistency; same-UID JSONL can still forge it."""
+    p = m.get("provenance") if isinstance(m, dict) else None
+    claim = p.get("identity_claim") if isinstance(p, dict) else None
+    if not isinstance(p, dict) or not isinstance(claim, dict):
+        return False
+    actor = p.get("actor_id")
+
+    def valid_id(value):
+        return (isinstance(value, str) and 1 <= len(value) <= 128
+                and value[0].isascii() and value[0].isalnum()
+                and all(c.isascii() and (c.isalnum() or c in "._:@-")
+                        for c in value))
+
+    temel = (
+        m.get("schema_version") == 2
+        and m.get("source") == "panel_api" and p.get("source") == "panel_api"
+        and m.get("trust") == "verified" and p.get("trust") == "verified"
+        and m.get("actor_id") == actor and m.get("kimden") == actor
+        and m.get("auth_method") == "hmac-sha256"
+        and p.get("auth_method") == "hmac-sha256"
+        and valid_id(actor) and valid_id(p.get("key_id"))
+        and valid_id(p.get("audience"))
+        and isinstance(p.get("scope"), str)
+        and p.get("scope") in AUTH_MESAJ_SCOPELARI
+        and type(p.get("timestamp")) is int
+        and 0 <= p["timestamp"] <= 253402300799
+        and claim.get("value") == actor
+        and claim.get("source") == "hmac_principal"
+        and claim.get("trust") == "verified"
+        and claim.get("actor_id") == actor
+        and set(p) == {"source", "trust", "actor_id", "auth_method",
+                       "identity_claim", "key_id", "audience", "scope", "timestamp"}
+        and set(claim) == {"value", "source", "trust", "actor_id"}
+        and isinstance(m.get("id"), str) and isinstance(m.get("ts"), str)
+        and isinstance(m.get("metin"), str)
+    )
+    if not temel:
+        return False
+    if m.get("kanal") == "audit":
+        audit = m.get("audit")
+        return (m.get("tur") == "denetim" and isinstance(audit, dict)
+                and set(m) == {"id", "ts", "kimden", "kime", "tur", "metin", "ad",
+                               "kanal", "schema_version", "source", "trust", "actor_id",
+                               "auth_method", "provenance", "audit"}
+                and set(audit) == {"event_id", "operation", "target_id", "before", "after"}
+                and audit.get("event_id") == m.get("id")
+                and isinstance(audit.get("operation"), str)
+                and audit.get("operation") in {"sorumlu.set", "bas_denetci.set"}
+                and valid_id(audit.get("target_id"))
+                and all(value is None or valid_id(value)
+                        for value in (audit.get("before"), audit.get("after")))
+                and m.get("kimden") == actor)
+    chat_fields = {"id", "ts", "kimden", "kime", "tur", "metin", "ad",
+                   "kanal", "schema_version", "source", "trust", "actor_id",
+                   "auth_method", "provenance"}
+    legacy_chat_fields = chat_fields
+    enriched_chat_fields = chat_fields | {"source_class", "source_class_trust"}
+    return (m.get("kanal") == "sohbet" and m.get("tur") in TURLER
+            and (set(m) == legacy_chat_fields or set(m) == enriched_chat_fields)
+            and (set(m) == legacy_chat_fields or
+                 (m.get("source_class") in MESAJ_KAYNAK_SINIFLARI
+                  and m.get("source_class_trust") == "unverified")))
 
 
 def bana_gelen(ad, kimlik=None):
@@ -364,18 +864,79 @@ def panel_al(panel=None):
     return (panel or os.environ.get("YUVA_PANEL") or PANEL_VARSAYILAN).rstrip("/")
 
 
+POST_NOT_SENT = "not_sent"
+POST_HTTP_RESPONSE = "http_response"
+POST_UNKNOWN = "unknown"
+
+
+class _PostRedirectYok(urllib.request.HTTPRedirectHandler):
+    """Do not let a POST redirect hide a completed first request."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if req.get_method().upper() == "POST":
+            return None
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def post_not_sent_kaniti(e):
+    """True only for failures that prove no HTTP request bytes reached a peer.
+
+    urllib does not expose its write progress. POST redirects are disabled, so
+    only name-resolution and connection-refused errors from the initial
+    connection establish a no-request-bytes result. Timeout, network/reset,
+    write/read, and response-decoding errors remain unknown.
+    """
+    neden = e.reason if isinstance(e, urllib.error.URLError) else e
+    if isinstance(neden, socket.gaierror):
+        return True
+    return isinstance(neden, ConnectionRefusedError)
+
+
 def http_iste(panel, yol, govde=None, sn=HTTP_SN):
+    post = govde is not None
     url = panel_al(panel) + yol
     try:
-        if govde is None:
+        if not post:
             istek = urllib.request.Request(url, method="GET")
         else:
             istek = urllib.request.Request(
                 url, data=json.dumps(govde, ensure_ascii=False).encode("utf-8"),
                 headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(istek, timeout=sn) as r:
-            return True, json.loads(r.read().decode("utf-8"))
     except Exception as e:
+        # Serialization/request construction precedes any transport call.
+        if post:
+            return False, {"transport_state": POST_NOT_SENT, "hata": str(e)}
+        return False, str(e)
+
+    try:
+        if post:
+            # A redirect after a POST response could otherwise send a second
+            # request and then report a later DNS/connect error as not-sent.
+            opener = urllib.request.build_opener(_PostRedirectYok())
+            yanit = opener.open(istek, timeout=sn)
+        else:
+            yanit = urllib.request.urlopen(istek, timeout=sn)
+        with yanit as r:
+            # A response was received, but a broken body is not proof that a
+            # POST handler did not commit before its response was lost.
+            return True, json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            metin = e.read().decode("utf-8", errors="replace")
+            try:
+                cevap = json.loads(metin)
+            except (TypeError, ValueError):
+                cevap = metin
+        except Exception:
+            cevap = str(e.reason)
+        sonuc = {"http_status": e.code, "hata": cevap}
+        if post:
+            sonuc["transport_state"] = POST_HTTP_RESPONSE
+        return False, sonuc
+    except Exception as e:
+        if post:
+            durum = POST_NOT_SENT if post_not_sent_kaniti(e) else POST_UNKNOWN
+            return False, {"transport_state": durum, "hata": str(e)}
         return False, str(e)
 
 
@@ -644,7 +1205,7 @@ def host_birim_durumu(birim):
                         "--property=MainPID", "--property=InvocationID",
                         "--no-pager"], capture_output=True, text=True, timeout=2)
     if p.returncode:
-        raise RuntimeError(p.stderr.strip() or "systemctl show başarısız")
+        raise RuntimeError("systemctl show başarısız")
     sonuc = {}
     for satir in p.stdout.splitlines():
         if "=" in satir:
@@ -664,7 +1225,7 @@ def host_birim_durdur(birim):
     p = subprocess.run([shutil.which("systemctl"), "--user", "stop", birim],
                        capture_output=True, text=True, timeout=15)
     if p.returncode:
-        return p.stderr.strip() or f"systemctl stop çıkış kodu {p.returncode}"
+        return f"systemctl stop başarısız (çıkış kodu {p.returncode})"
     son = host_birim_durumu(birim)
     if son and son.get("ActiveState") in ("active", "activating", "deactivating"):
         return "systemctl stop sonrasında birim hâlâ etkin"
@@ -713,9 +1274,20 @@ def kalp_tarihi_taze(iso, sn=30):
         return False
 
 
+def panel_online_esigi(pv_all):
+    """Bool olmayan, güvenli aralıktaki tamsayı online_sn'i kullan;
+    aksi halde PANEL_ONLINE_SN varsayılanını döndür."""
+    sn = pv_all.get("online_sn") if isinstance(pv_all, dict) else None
+    if (isinstance(sn, int) and not isinstance(sn, bool)
+            and PANEL_ONLINE_SN_MIN <= sn <= PANEL_ONLINE_SN_MAX):
+        return sn
+    return PANEL_ONLINE_SN
+
+
 def host_kalp_baslat(kimlik, sn, panel, ttl=0, kontrol_kilitli=False,
                      force_restart=False):
     """Kalp döngüsünü kullanıcı systemd yöneticisine devret ve invocation'ı doğrula."""
+    return None, "doğrulanmış broker principal yok; heartbeat başlatma kapalı"
     if not host_kontrol_var_mi():
         return None, "kullanıcı systemd yöneticisi erişilebilir değil"
     sn = int(sn)
@@ -738,14 +1310,14 @@ def host_kalp_baslat(kimlik, sn, panel, ttl=0, kontrol_kilitli=False,
             dur_hata = host_birim_durdur(birim)
             if dur_hata:
                 return None, f"önceki heartbeat servisi durdurulamadı: {dur_hata}"
-        except Exception as e:
-            return None, f"host servisi denetlenemedi: {e}"
+        except Exception:
+            return None, "host servisi denetlenemedi; servis durumunu kontrol edin"
 
         def birim_temizle():
             try:
                 return host_birim_durdur(birim)
-            except Exception as e:
-                return str(e)
+            except Exception:
+                return "servis durdurma denetimi başarısız"
 
         token = hashlib.sha256(os.urandom(32)).hexdigest()
         env = dict(os.environ)
@@ -769,15 +1341,14 @@ def host_kalp_baslat(kimlik, sn, panel, ttl=0, kontrol_kilitli=False,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True, timeout=5, env=env)
             if p.returncode:
-                mesaj = (p.stderr.strip() or p.stdout.strip() or
-                         f"systemd-run çıkış kodu {p.returncode}")[:500]
+                mesaj = f"systemd-run başarısız (çıkış kodu {p.returncode})"
                 stop_hata = birim_temizle()
                 if stop_hata:
                     mesaj += f"; başarısız birimi durdurma hatası: {stop_hata}"
                 return None, mesaj
-        except Exception as e:
+        except Exception:
             stop_hata = birim_temizle()
-            mesaj = f"systemd-run başarısız: {e}"
+            mesaj = "systemd-run başlatılamadı; kullanıcı servisi durumunu kontrol edin"
             if stop_hata:
                 mesaj += f"; başarısız birimi durdurma hatası: {stop_hata}"
             return None, mesaj
@@ -808,8 +1379,8 @@ def host_kalp_baslat(kimlik, sn, panel, ttl=0, kontrol_kilitli=False,
     try:
         with kalp_kontrol_kilidi(kimlik):
             return _baslat()
-    except Exception as e:
-        return None, f"kalp kontrol kilidi alınamadı: {e}"
+    except Exception:
+        return None, "kalp kontrol kilidi alınamadı; yerel servis durumunu kontrol edin"
 
 
 def daemon_hazirlik_bekle(fd, sure=DAEMON_HAZIRLIK_SURESI):
@@ -864,6 +1435,7 @@ def daemon_child_temizle(pr, bekle=0.5):
 
 
 def daemon_baslat(kimlik, sn, panel, ttl=0, temizle_dur=False):
+    return None, "doğrulanmış broker principal yok; heartbeat daemonı başlatma kapalı", None
     try:
         ttl = int(ttl)
     except Exception:
@@ -972,31 +1544,6 @@ def daemon_kapan(kimlik, neden, durdur=False):
     saglik_guncelle(kimlik, "durduruldu", neden)
 
 
-def kalp_guven(kimlik, panel=None, sn=10):
-    """Işığı canlı tut: kalp daemon'ı ölmüşse (ör. terminal/süreç yenilendi) yeniden başlat.
-
-    `yuva ayril` ile ayrılan (bagli=False) veya durdurma işareti olan kimlik için
-    kendiliğinden başlatmaz.
-    """
-    d = durum_oku()
-    if not d["kullanicilar"].get(kimlik, {}).get("bagli"):
-        return None
-    if dur_dosyasi(kimlik).exists():
-        return None
-    try:
-        saglik = yukle(saglik_dosyasi(kimlik), {})
-        sn = min(KALP_ARALIK_UST,
-                 max(1, int(saglik.get("host_interval") or sn)))
-        ttl = max(0, int(saglik.get("host_ttl") or 0))
-    except Exception:
-        ttl = 0
-    birim, hata = host_kalp_baslat(kimlik, sn, panel, ttl)
-    if hata:
-        saglik_guncelle(kimlik, "hata", f"host kalp doğrulanamadı: {hata}")
-        print(f"⚠️ host heartbeat doğrulanamadı: {hata}")
-    return None
-
-
 def benzersiz_yerel(d, ad, haric=None):
     alinan = {str(v.get("ad") or k).lower(): k
               for k, v in d["kullanicilar"].items() if k != haric}
@@ -1051,245 +1598,49 @@ def cmd_baglan(a):
     kimlik = coz_kimlik(a.kimlik) or a.kimlik
     panel = panel_al(a.panel)
     with kilit_tut():
-        mevcut = durum_oku()
-        if kimlik in mevcut["kullanicilar"]:
-            hata = kimlik_rol_gecis_dogrula(mevcut, kimlik, a.rol)
+        d = durum_oku()
+        if kimlik in d["kullanicilar"]:
+            hata = kimlik_rol_gecis_dogrula(d, kimlik, a.rol)
             if hata:
                 raise VeriHatasi(hata)
-    if a.kalp and not host_kontrol_var_mi():
-        raise VeriHatasi(
-            "kalp güvenli biçimde başlatılamadı: kullanıcı systemd yöneticisi "
-            "erişilemiyor. Sandbox dışındaki host terminalinde `systemctl --user "
-            "status` ile kullanıcı yöneticisini doğrulayın ve aynı `yuva baglan` komutunu "
-            "yeniden çalıştırın; yerel modda bağlanma yapılmadı.")
-    aralik = int(a.kalp_sn)
-    if a.kalp and not 1 <= aralik <= KALP_ARALIK_UST:
-        raise VeriHatasi(f"--kalp-sn 1-{KALP_ARALIK_UST} saniye arasında olmalı")
-
-    try:
-        with kalp_kontrol_kilidi(kimlik):
-            ok, cevap = http_iste(panel, "/api/katil",
-                                  {"kimlik": kimlik, "arac": a.arac,
-                                   "rol": a.rol, "ad": a.ad or kimlik})
-            if not (ok and isinstance(cevap, dict) and cevap.get("ok")):
-                raise VeriHatasi(f"panele bağlanılamadı ({panel}): {cevap}")
-            try:
-                with kilit_tut():
-                    d = durum_oku()
-                    k = d["kullanicilar"].setdefault(kimlik, {"katilma": simdi()})
-                    zaten_bagli = bool(k.get("bagli"))
-                    k.update({"arac": a.arac, "rol": a.rol, "bagli": True,
-                              "son_gorulme": simdi()})
-                    if not zaten_bagli:
-                        k.pop("son_kalp", None)
-                    k.setdefault("katilma", simdi())
-                    if a.ad:
-                        k["ad"] = benzersiz_yerel(d, a.ad, haric=kimlik)
-                    k.setdefault("ad", kimlik)
-                    kaydet(STATE, d)
-                    # Marker ancak yeni bağlı state diske yazıldıktan sonra temizlenir.
-                    dur_dosyasi(kimlik).unlink(missing_ok=True)
-            except Exception:
-                sorunlar = baglan_geri_al(kimlik, panel)
-                ek = f"; geri alma sorunları: {'; '.join(sorunlar)}" if sorunlar else ""
-                raise VeriHatasi(f"yerel bağlantı kaydı başarısız{ek}")
-            ad = cevap.get("ad") or k.get("ad") or kimlik
-
-            if a.kalp:
-                birim, hata = host_kalp_baslat(
-                    kimlik, aralik, panel, getattr(a, "kalp_ttl", 0),
-                    kontrol_kilitli=True, force_restart=not zaten_bagli)
-                if hata:
-                    sorunlar = baglan_geri_al(kimlik, panel)
-                    ek = f"; geri alma sorunları: {'; '.join(sorunlar)}" if sorunlar else ""
-                    raise VeriHatasi(
-                        f"host heartbeat başlatılamadı: {hata}. Sandbox dışındaki host "
-                        "terminalinde `systemctl --user status` ile kullanıcı systemd "
-                        f"oturumunu doğrulayıp komutu yeniden çalıştırın{ek}.")
-            else:
-                try:
-                    with kilit_tut():
-                        _dur_yaz_locked(kimlik, "kalp kapalı")
-                except Exception as e:
-                    sorunlar = baglan_geri_al(kimlik, panel)
-                    ek = f"; geri alma sorunları: {'; '.join(sorunlar)}" if sorunlar else ""
-                    raise VeriHatasi(f"kalp durdurma işareti yazılamadı: {e}{ek}")
-                if host_kontrol_var_mi():
-                    try:
-                        hata = host_birim_durdur(host_birim(kimlik, panel))
-                    except Exception as e:
-                        hata = str(e)
-                    if hata:
-                        sorunlar = baglan_geri_al(kimlik, panel)
-                        ek = f"; geri alma sorunları: {'; '.join(sorunlar)}" if sorunlar else ""
-                        raise VeriHatasi(f"kalp servisi durdurulamadı: {hata}{ek}")
-                    stop_uyari = None
-                else:
-                    stop_uyari = "systemd yöneticisi erişilemiyor; .dur işareti kapanışı bekliyor"
-                saglik_guncelle(kimlik, "durduruldu",
-                                "kalp kapalı (baglan --kalp-yok)")
-    except OSError as e:
-        raise VeriHatasi(f"kalp geçiş kilidi/işlemi başarısız: {e}") from e
-
-    if a.kalp:
-        print(f"   💚 host heartbeat doğrulandı (systemd --user: {birim})")
-        if host_linger_durumu() is not True:
-            print("   ⚠️ user manager logoutta kapanabilir; logout sonrası çalışma için "
-                  "hostta `loginctl enable-linger \"$USER\"` ayarını yapıp canary ile doğrulayın. "
-                  "Geçici unit reboot sonrası yeniden bağlanma gerektirir.")
-    else:
-        print("   ⚪ kalp kapalı (--kalp ile açılır; panelde çevrimdışı görünür)")
-        if stop_uyari:
-            print(f"   ⚠️ {stop_uyari}")
-    print(f"bağlantı kaydedildi: ad={ad} (kimlik: {kimlik}) · "
+    ok, cevap = http_iste(panel, "/api/katil",
+                          {"kimlik": kimlik, "arac": a.arac, "rol": a.rol,
+                           "ad": a.ad or kimlik})
+    if not ok or not isinstance(cevap, dict) or not cevap.get("ok"):
+        if isinstance(cevap, dict) and "http_status" in cevap:
+            raise VeriHatasi(f"panele katılım reddedildi (HTTP {cevap['http_status']}): "
+                              f"{cevap['hata']}")
+        raise VeriHatasi(f"panele katılım başarısız ({panel}): {cevap}")
+    ad = cevap.get("ad") or a.ad or kimlik
+    with kilit_tut():
+        d = durum_oku()
+        if kimlik in d["kullanicilar"]:
+            hata = kimlik_rol_gecis_dogrula(d, kimlik, a.rol)
+            if hata:
+                raise VeriHatasi(hata)
+        k = d["kullanicilar"].setdefault(kimlik, {"katilma": simdi()})
+        k.update({"arac": a.arac, "rol": a.rol})
+        k.setdefault("katilma", simdi())
+        if a.ad or not k.get("ad"):
+            k["ad"] = ad
+        k.setdefault("ad", kimlik)
+        kaydet(STATE, d)
+    ad = k.get("ad") or kimlik
+    print(f"katılım kaydedildi: ad={ad} (kimlik: {kimlik}) · "
           f"rol: {ROL_AD.get(a.rol, a.rol)} · panel: {panel}")
+    print("   ⚪ katılım roster kaydıdır; broker principal doğrulanmadığı için "
+          "online/presence kanıtı ve kalp daemonı oluşturulmadı")
     print(f"   📬 gelen kutun: yuva gelen --from {kimlik}")
 
 
 def cmd_kalp(a):
-    ok, cevap = http_iste(a.panel, "/api/kalp", {"kimlik": a.from_})
-    if ok and isinstance(cevap, dict) and cevap.get("ok"):
-        saglik_guncelle(a.from_, "ok")
-        kullanici_dokun(a.from_)
-        print(f"💚 kalp gönderildi ({cevap.get('ad') or a.from_})")
-    else:
-        saglik_guncelle(a.from_, "hata", cevap)
-        kullanici_dokun(a.from_)
-        print(f"⚪ kalp panele iletilemedi ({goster_ad(a.from_)}) — "
-              "panel çevrimiçi durumu güncellenmedi")
+    raise VeriHatasi(
+        "--from yalnızca kimlik iddiasıdır; doğrulanmış broker kimliği olmadan "
+        "heartbeat/presence yazılamaz")
 
 
 def cmd_kalp_dongu(a):
-    kimlik = a.from_
-    host = bool(getattr(a, "host_supervised", False))
-    kilit_fd = getattr(a, "kilit_fd", None)
-    hazirlik_fd = getattr(a, "hazirlik_fd", None)
-    hazirlik_bildirildi = False
-    yonetim = None
-
-    def hazirlik_bildir(mesaj):
-        nonlocal hazirlik_bildirildi
-        if hazirlik_fd is None or hazirlik_bildirildi:
-            return
-        try:
-            os.write(hazirlik_fd, (mesaj + "\n").encode("utf-8", errors="replace")[:1024])
-        except OSError:
-            pass
-        hazirlik_bildirildi = True
-
-    if host:
-        if not getattr(a, "host_token", None) or not getattr(a, "host_instance", None):
-            hazirlik_bildir("ERR: host supervisor token/instance yok")
-            return
-        yonetim = {"host_supervised": True,
-                   "host_instance": a.host_instance,
-                   "host_token": a.host_token,
-                   "host_root": str(KOK.resolve()),
-                   "host_panel": panel_al(a.panel),
-                   "host_interval": max(1, int(a.sn)),
-                   "host_ttl": max(0, int(a.ttl)),
-                   "host_pid": os.getpid(),
-                   "host_invocation": os.environ.get("INVOCATION_ID")}
-        if not yonetim["host_invocation"]:
-            saglik_guncelle(kimlik, "hata", "systemd invocation kimliği yok", yonetim)
-            return
-        try:
-            kilit_fd = daemon_kilit_ac(kimlik, blokla=False)
-        except Exception as e:
-            saglik_guncelle(kimlik, "hata", f"host flock alınamadı: {e}", yonetim)
-            return
-        if kilit_fd is None:
-            # Önceki candidate daemon kapanırken flock bırakmasını bekle.
-            bitis_bekle = time.monotonic() + 15
-            while time.monotonic() < bitis_bekle:
-                if dur_dosyasi(kimlik).exists():
-                    return
-                d = durum_oku()
-                if not d["kullanicilar"].get(kimlik, {}).get("bagli"):
-                    return
-                time.sleep(0.2)
-                try:
-                    kilit_fd = daemon_kilit_ac(kimlik, blokla=False)
-                except Exception:
-                    kilit_fd = None
-                if kilit_fd is not None:
-                    break
-            if kilit_fd is None:
-                saglik_guncelle(kimlik, "hata", "host flock başka daemon tarafından tutuluyor", yonetim)
-                return
-        try:
-            yonetim.update(kok_kilit_kimligi(kimlik))
-            if os.fstat(kilit_fd).st_dev != yonetim["host_lock_dev"] or \
-                    os.fstat(kilit_fd).st_ino != yonetim["host_lock_ino"]:
-                raise VeriHatasi("host flock device/inode doğrulaması uyuşmuyor")
-        except Exception as e:
-            saglik_guncelle(kimlik, "hata", f"host KOK/lock doğrulanamadı: {e}", yonetim)
-            os.close(kilit_fd)
-            return
-    elif (kilit_fd is None or not daemon_kilit_fd_dogrula(kilit_fd, kimlik) or
-          int(getattr(a, "pid", 0) or 0) <= 1 or
-          int(getattr(a, "ata_baslangic", 0) or 0) <= 0):
-        saglik_guncelle(kimlik, "hata", "flock veya ebeveyn başlangıç zamanı doğrulanamadı")
-        hazirlik_bildir("ERR: flock veya ebeveyn başlangıç zamanı doğrulanamadı")
-        return
-
-    if not host and not daemon_kilit_fd_dogrula(kilit_fd, kimlik):
-        saglik_guncelle(kimlik, "hata", "heartbeat kilit FD'si doğrulanamadı")
-        hazirlik_bildir("ERR: heartbeat kilit FD'si doğrulanamadı")
-        if hazirlik_fd is not None:
-            try:
-                os.close(hazirlik_fd)
-            except OSError:
-                pass
-        return
-    panel = panel_al(a.panel)
-    bitis = time.time() + a.ttl if a.ttl > 0 else None
-    ata_baslangic = getattr(a, "ata_baslangic", 0) or None
-    try:
-        saglik_guncelle(kimlik, "basladi")
-        while bitis is None or time.time() < bitis:
-            if not host and a.pid:
-                guncel_baslangic = proc_baslangic(a.pid)
-                if (guncel_baslangic is None or
-                        (ata_baslangic is not None and
-                         guncel_baslangic != int(ata_baslangic))):
-                    daemon_kapan(kimlik, "ebeveyn süreç yok")
-                    hazirlik_bildir("ERR: ebeveyn süreç yok")
-                    return
-            if dur_dosyasi(kimlik).exists():
-                daemon_kapan(kimlik, "ayrilma işareti")
-                hazirlik_bildir("ERR: ayrılma işareti var")
-                return
-            d = durum_oku()
-            kisi = d["kullanicilar"].get(kimlik)
-            if not kisi or not kisi.get("bagli"):
-                daemon_kapan(kimlik, "bagli=false veya kullanıcı yok")
-                hazirlik_bildir("ERR: kullanıcı bağlı değil")
-                return
-            ok, cevap = http_iste(panel, "/api/kalp", {"kimlik": kimlik}, sn=1.0)
-            if ok and isinstance(cevap, dict) and cevap.get("ok"):
-                saglik_guncelle(kimlik, "ok", yonetim=yonetim)
-                hazirlik_bildir("READY")
-            else:
-                saglik_guncelle(kimlik, "hata", cevap, yonetim)
-                hazirlik_bildir(f"ERR: ilk panel heartbeat başarısız: {cevap}")
-                if not host:
-                    return
-            time.sleep(max(1, a.sn))
-        daemon_kapan(kimlik, "ttl doldu", durdur=True)
-    except Exception as e:
-        daemon_kapan(kimlik, f"kalp döngüsü hatası: {e}")
-        hazirlik_bildir(f"ERR: kalp döngüsü hatası: {e}")
-        if host:
-            raise
-    finally:
-        for fd in (kilit_fd, hazirlik_fd):
-            if fd is not None:
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
-
+    raise VeriHatasi("broker principal doğrulanmadığı için kalp daemonı ve heartbeat yolu kapalı")
 
 def cmd_ayril(a):
     on_kimlik = coz_kimlik(a.from_, durum_oku()) or a.from_
@@ -1359,16 +1710,19 @@ def cmd_ekran(a):
     metin = " ".join(a.satir)
     ok, cevap = http_iste(a.panel, "/api/ekran",
                           {"kimlik": kimlik, "satir": metin, "tur": a.tur})
-    if ok and isinstance(cevap, dict) and cevap.get("ok"):
-        kullanici_dokun(kimlik)
-        kalp_guven(kimlik, a.panel)
-        return                      # panel yazdı (aynı dosya) → çift satır olmasın
+    if ok and isinstance(cevap, dict) and cevap.get("ok") is True:
+        return                      # panel yazdı; presence/daemon yan etkisi yok
+    if not ok and isinstance(cevap, dict) and "http_status" in cevap:
+        raise VeriHatasi(f"panel reddetti (HTTP {cevap['http_status']}): {cevap['hata']}")
+    if ok:
+        hata = cevap.get("hata", cevap) if isinstance(cevap, dict) else cevap
+        raise VeriHatasi(f"panel reddetti: {hata}")
+    if not isinstance(cevap, dict) or cevap.get("transport_state") != POST_NOT_SENT:
+        raise VeriHatasi(f"ekran POST sonucu bilinmiyor; yerel kayıt yapılmadı: {cevap}")
     ekle_jsonl(EKRAN / (guvenli(kimlik) + ".jsonl"),
                {"ts": simdi(), "kimlik": kimlik, "ad": goster_ad(kimlik),
                 "tur": a.tur, "satir": metin})
-    kullanici_dokun(kimlik)
-    kalp_guven(kimlik, a.panel)
-    print("⚠️ panel kapalı — ekran yalnız yerel yazıldı")
+    print("⚠️ panel erişilemiyor — ekran satırı yalnız yerel yazıldı")
 
 
 def cmd_ekran_oku(a):
@@ -1377,15 +1731,31 @@ def cmd_ekran_oku(a):
         k = coz_kimlik(a.from_) or a.from_
         dosyalar = [EKRAN / (guvenli(k) + ".jsonl")]
     elif EKRAN.exists():
-        dosyalar = sorted(EKRAN.glob("*.jsonl"))
+        # Deterministically choose the first names; keep discovery memory bounded.
+        dosyalar = heapq.nsmallest(EKRAN_OKUMA_AZAMI_DOSYA,
+                                   EKRAN.glob("*.jsonl"))
     if not dosyalar:
         print("(henüz ekran yok)")
         return
+    kalan_bayt = EKRAN_OKUMA_TOPLAM_BAYT
+    gosterilen = False
     for f in dosyalar:
+        if kalan_bayt <= 0:
+            break
         if not f.exists():
             continue
         satirlar = []
-        for s in f.read_text(encoding="utf-8", errors="replace").splitlines()[-a.n:]:
+        n = max(0, min(int(a.n), 60))
+        try:
+            ayrilan_bayt = min(1024 * 1024, kalan_bayt, f.stat().st_size)
+            kalan_bayt -= ayrilan_bayt  # reserve before reading, including error paths
+            satirlar_raw, _ = _jsonl_tail_satirlari(
+                f, en_cok_satir=n,
+                en_cok_bayt=ayrilan_bayt,
+                en_cok_kayit_bayt=16 * 1024, taranan_dondur=True)
+        except OSError:
+            continue
+        for s in satirlar_raw:
             try:
                 satirlar.append(json.loads(s))
             except Exception:
@@ -1395,9 +1765,12 @@ def cmd_ekran_oku(a):
         kimlik = satirlar[-1].get("kimlik") or f.stem
         ad = satirlar[-1].get("ad") or goster_ad(kimlik)
         print(renkli(f"── 🖥️ {ad} ({kimlik}) ──", "1;90"))
+        gosterilen = True
         for s in satirlar:
             im = {"komut": "$", "sonuc": "→", "baslik": "##"}.get(s.get("tur"), " ")
             print(f"  {renkli(s.get('ts', '')[5:16], '90')} {renkli(im, '36')} {s.get('satir', '')}")
+    if not gosterilen:
+        print("(gösterilecek ekran satırı yok)")
 
 
 def cmd_durum(a):
@@ -1406,34 +1779,48 @@ def cmd_durum(a):
     v = d["kullanicilar"].get(kimlik, {})
     ad = v.get("ad") or kimlik
     rol = v.get("rol", "isci")
-    online = None
     pv_all = panel_veri(a.panel)
+    online_sn = panel_online_esigi(pv_all)
     pks = pv_all.get("kullanicilar") if isinstance(pv_all, dict) else None
     panel_ok = isinstance(pks, dict)
     pv = pks.get(kimlik) if panel_ok else None
     if isinstance(pv, dict):
         ad = pv.get("ad") or ad
         rol = pv.get("rol") or rol
-        online = bool(pv.get("online"))
         v = dict(v, bas_denetci=pv.get("bas_denetci"))
-    elif panel_ok:
-        online = False
     bd = " 🔍 BAŞ DENETÇİ" if v.get("bas_denetci") else ""
     okunmamis = [m for m in bana_gelen(ad, kimlik)
                  if m["ts"] > (v.get("son_okuma") or "")]
     gb = gorev_yukle()
     benim = [g for g in gb["gorevler"] if g.get("assignee") in (kimlik, ad)
              and g["durum"] in ("assigned", "pending_revision")]
-    panel_txt = ("🟢 bağlı" if online is True else
-                 "⚪ çevrimdışı" if online is False else
-                 "⚪ bilinmiyor")
+    presence_online = (
+        isinstance(pv, dict)
+        and pv.get("online") is True
+        and pv.get("presence_verified") is True
+        and pv.get("presence_state") == "online"
+        and kalp_tarihi_taze(pv.get("son_kalp"), online_sn)
+    )
+    if presence_online:
+        panel_txt = "🟢 Yuva presence çevrimiçi"
+    elif isinstance(pv, dict) and pv.get("presence_verified") is True \
+            and pv.get("presence_state") == "offline":
+        panel_txt = "⚪ Yuva presence çevrimdışı"
+    elif isinstance(pv, dict):
+        panel_txt = "⚪ Yuva presence durumu doğrulanamıyor"
+    else:
+        panel_txt = "⚪ bilinmiyor"
+    son_kalp = (pv.get("son_kalp") if presence_online else None)
+    son_kalp_txt = f" · son kalp: {son_kalp}" if son_kalp else " · son kalp bilinmiyor"
     print(f"👤 {ad} ({kimlik}) · {v.get('arac', 'diger')} · rol: {ROL_AD.get(rol, rol)}{bd}"
           f" · panel {panel_txt}"
-          f" · son görülme {(v.get('son_gorulme') or '?')[11:16]}"
-          f" · okunmamış: {len(okunmamis)} · bekleyen görev: {len(benim)}")
+          f"{son_kalp_txt}"
+          f" · okunmamış: {len(okunmamis)} · Yuva’da atanmış görev: {len(benim)}")
 
 
 def cmd_katil(a):
+    a.kimlik = a.ad
+    a.ad = None
     cmd_baglan(a)
 
 
@@ -1443,6 +1830,7 @@ def cmd_kimler(a):
         print("Kimse yok. `yuva baglan <takma-ad> --arac <claude|codex|opencode>`")
         return
     pv = panel_veri(a.panel)
+    online_sn = panel_online_esigi(pv)
     pks = pv.get("kullanicilar") if isinstance(pv, dict) else None
     panel_ok = isinstance(pks, dict)
     if not panel_ok:
@@ -1452,13 +1840,31 @@ def cmd_kimler(a):
         p = pks.get(ad, {}) if panel_ok else {}
         if not isinstance(p, dict):
             p = {}
-        online = bool(p.get("online")) if panel_ok else False
+        online = (
+            panel_ok
+            and p.get("online") is True
+            and p.get("presence_verified") is True
+            and p.get("presence_state") == "online"
+            and kalp_tarihi_taze(p.get("son_kalp"), online_sn)
+        )
+        offline = (panel_ok and p.get("presence_verified") is True
+                   and p.get("presence_state") == "offline")
         gorunen = p.get("ad") or k.get("ad") or ad
         isik = "🟢" if panel_ok and online else "⚪"
+        if online:
+            presence_txt = "Yuva presence çevrimiçi"
+            son = p.get("son_kalp")
+        elif offline:
+            presence_txt = "Yuva presence çevrimdışı"
+            son = None
+        else:
+            presence_txt = "Yuva presence durumu doğrulanamıyor"
+            son = None
+        son_txt = f"son kalp: {son}" if son else "son kalp: bilinmiyor"
         bd = " 🔍" if (p.get("bas_denetci") or k.get("bas_denetci")) else ""
         print(f"{isik} {renkli(gorunen, kisi_renk(ad)):20} "
               f"{ROL_AD.get(k.get('rol'), '?'):8} "
-              f"[{k.get('arac', '?')}] {renkli(ad, '90')} son: {(k.get('son_gorulme') or '?')[11:19]}{bd}")
+              f"[{k.get('arac', '?')}] {renkli(ad, '90')} {presence_txt} · {son_txt}{bd}")
 
 
 def cmd_sorumlu(a):
@@ -1514,16 +1920,24 @@ def msaj_satir(m, kimin):
 
 
 def cmd_yaz(a):
+    from_claim = str(a.from_ or "").casefold().strip().lstrip("@")
+    if from_claim in {"operator", "operatör", "operatorum", "operatörüm"}:
+        raise VeriHatasi("--from operatör kimlik doğrulaması değildir; mesaj reddedildi")
     hedef = a.to or "@hepsi"
     ok, cevap = http_iste(a.panel, "/api/yaz", {"kimden": a.from_, "metin": a.metin,
-                                               "kime": hedef, "tur": a.tur})
-    if ok and isinstance(cevap, dict) and cevap.get("ok"):
-        kalp_guven(a.from_, a.panel)
-        return                      # panel yazdı (aynı dosya) → çift kayıt olmasın
+                                                "kime": hedef, "tur": a.tur})
+    if ok and isinstance(cevap, dict) and cevap.get("ok") is True:
+        return                      # panel yazdı; presence/daemon yan etkisi yok
+    if not ok and isinstance(cevap, dict) and "http_status" in cevap:
+        raise VeriHatasi(f"panel reddetti (HTTP {cevap['http_status']}): {cevap['hata']}")
     if ok:
-        sys.exit(f"⚠️ panel reddetti: {(cevap or {}).get('hata')}")
-    mesaj_ekle(a.from_, a.metin, kime=hedef, tur=a.tur)   # panel yoksa yerel
-    kalp_guven(a.from_, a.panel)
+        hata = cevap.get("hata", cevap) if isinstance(cevap, dict) else cevap
+        raise VeriHatasi(f"panel reddetti: {hata}")
+    if not isinstance(cevap, dict) or cevap.get("transport_state") != POST_NOT_SENT:
+        raise VeriHatasi(f"mesaj POST sonucu bilinmiyor; yerel kayıt yapılmadı: {cevap}")
+    mesaj_ekle(a.from_, a.metin, kime=hedef, tur=a.tur,
+               source_class="unknown")
+    print("⚠️ panel erişilemiyor — mesaj yalnız yerel kaydedildi")
 
 
 def cmd_oku(a):
@@ -1535,10 +1949,114 @@ def cmd_oku(a):
         print(msaj_satir(m, a.from_))
 
 
+def _wait_unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def _wait_read_snapshot():
+    """Read one bounded, detached append-order inbox snapshot without writes."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(BUS, flags)
+    except FileNotFoundError:
+        return []
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+            raise OSError("inbox must be an owner-owned regular file")
+        if info.st_size > WAIT_INBOX_MAX_BYTES:
+            raise OSError("inbox exceeds wait snapshot byte limit")
+        chunks = []
+        remaining = info.st_size
+        while remaining:
+            chunk = os.read(fd, min(65536, remaining))
+            if not chunk:
+                raise OSError("inbox changed during snapshot read")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+    finally:
+        os.close(fd)
+    if raw and not raw.endswith(b"\n"):
+        raise ValueError("inbox has an incomplete JSONL tail")
+    if raw.count(b"\n") > WAIT_INBOX_MAX_RECORDS:
+        raise ValueError("inbox snapshot has too many records")
+    try:
+        text = raw.decode("utf-8", errors="strict")
+        lines = text.splitlines()
+        if any(not line or len(line.encode("utf-8")) > WAIT_RECORD_MAX_BYTES
+               for line in lines):
+            raise ValueError("inbox record is empty or too large")
+        return [json.loads(line, object_pairs_hook=_wait_unique_object) for line in lines]
+    except (UnicodeError, json.JSONDecodeError, ValueError):
+        raise ValueError("inbox snapshot is malformed") from None
+
+
+def _wait_module():
+    global _WAIT_MODULE
+    if _WAIT_MODULE is None:
+        path = CODE_ROOT / "prototypes" / "yuva-wait" / "wait.py"
+        name = "yuva_wait_cli_prototype"
+        spec = importlib.util.spec_from_file_location(name, path)
+        if spec is None or spec.loader is None:
+            raise VeriHatasi("wait info-mode prototype is unavailable")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+        _WAIT_MODULE = module
+    return _WAIT_MODULE
+
+
+def cmd_wait(a):
+    """Observe at most one direct-target data-only message; never acknowledge it."""
+    d = durum_oku()
+    kimlik = a.from_
+    if kimlik not in d["kullanicilar"]:
+        raise VeriHatasi("--from mevcut, tam Yuva kimlik anahtarı olmalı")
+    kisi = d["kullanicilar"][kimlik]
+    ad = kisi.get("ad") or kimlik
+    targets = {"@" + kimlik}
+    ad_target = "@" + str(ad)
+    if ad_target.lower() not in {"@hepsi", "@all", "@*"}:
+        targets.add(ad_target)
+    wait = _wait_module()
+    try:
+        result = wait.wait_for_message(
+            _wait_read_snapshot,
+            recipient_values=targets,
+            after_id=a.after,
+            timeout=a.timeout,
+            poll_interval=a.poll_interval,
+        )
+    except ValueError as error:
+        raise VeriHatasi(f"wait seçenekleri geçersiz: {error}") from None
+    except KeyboardInterrupt:
+        result = wait.WaitResult("cancelled", reason="cancel_requested")
+
+    body = {"status": result.status}
+    if result.message is not None:
+        body["message"] = asdict(result.message)
+        body["next_cursor"] = result.next_cursor
+    if result.reason:
+        body["reason"] = result.reason
+    print(json.dumps(body, ensure_ascii=False, sort_keys=True))
+    if result.status == "message":
+        return 0
+    if result.status == "timeout":
+        return 1
+    if result.status == "cancelled":
+        return 130
+    return 2
+
+
 def cmd_gelen(a):
     ad = a.from_
     kimlik = coz_kimlik(ad) or ad
-    kullanici_dokun(kimlik)
     d = durum_oku()
     kisi = d["kullanicilar"].get(kimlik, {})
     ad = kisi.get("ad") or kimlik
@@ -1619,6 +2137,11 @@ def cmd_gelen(a):
 def cmd_tahta(a):
     gb = gorev_yukle()
     print(renkli("🪹 GÖREV TAHTASI", "1;36"))
+    pending_sayisi = sum(1 for g in gb["gorevler"]
+                         if g["durum"] == "pending")
+    if pending_sayisi < PENDING_GOREV_ALT_SINIRI:
+        print(f"⚠️ Atama bekleyen görev sayısı düşük: {pending_sayisi} "
+              f"(alt sınır {PENDING_GOREV_ALT_SINIRI}).")
     for g in gb["gorevler"]:
         d = DURUM_AD.get(g["durum"], g["durum"])
         renk = {"verified": "32", "pending_verification": "33",
@@ -1654,18 +2177,28 @@ def gorev_id_arg(deger):
 
 
 def gorev_yukle():
-    gb = yukle(GOREV, {"siradaki": 1, "gorevler": []})
+    gb = yukle(GOREV, {"siradaki": 1, "gorevler": []},
+               bos_varsayilan=False)
+    _schema_version_kontrolu(gb, GOREV.name, {DATA_SCHEMA_VERSION})
     gb.setdefault("siradaki", 1)
     gb.setdefault("gorevler", [])
     if not isinstance(gb["siradaki"], int) or isinstance(gb["siradaki"], bool):
         raise VeriHatasi("gorevler.json: 'siradaki' tam sayı olmalı")
     if not isinstance(gb["gorevler"], list):
         raise VeriHatasi("gorevler.json: 'gorevler' liste olmalı")
+    gorev_idleri = set()
     for g in gb["gorevler"]:
         if not isinstance(g, dict):
             raise VeriHatasi("gorevler.json: görev kaydı nesne olmalı")
         if "id" not in g:
             raise VeriHatasi("gorevler.json: görev kaydında 'id' yok")
+        gid = g["id"]
+        if isinstance(gid, bool) or not isinstance(gid, int) or gid < 1:
+            raise VeriHatasi(
+                f"gorevler.json: görev ID'si kanonik pozitif tamsayı değil: {gid!r}")
+        if gid in gorev_idleri:
+            raise VeriHatasi(f"gorevler.json: görev ID'si tekil değil: #{gid}")
+        gorev_idleri.add(gid)
         if "ust_gorev_id" in g:
             ust_id = g["ust_gorev_id"]
             if (ust_id is not None
@@ -1677,9 +2210,16 @@ def gorev_yukle():
             if not isinstance(g.get(alan), str):
                 raise VeriHatasi(
                     f"gorevler.json: #{g.get('id')} '{alan}' metin olmalı")
+        if g["durum"] not in GOREV_DURUMLARI:
+            raise VeriHatasi(
+                f"gorevler.json: #{g.get('id')} bilinmeyen görev durumu")
         g.setdefault("gecmis", [])
         if not isinstance(g["gecmis"], list):
             raise VeriHatasi(f"gorevler.json: #{g.get('id')} 'gecmis' liste olmalı")
+        for olay in g["gecmis"]:
+            if not isinstance(olay, dict):
+                raise VeriHatasi(
+                    f"gorevler.json: #{g.get('id')} geçmiş olayı nesne olmalı")
     return gb
 
 
@@ -1730,7 +2270,9 @@ def ust_gorev_dogrula(gb, ust_id, yeni_id):
 def gorev_olay_ekle(g, kimden, olay, not_metni=None):
     g["guncelleme"] = simdi()
     olaylar = g.setdefault("gecmis", [])
+    principal = _GOREV_PRINCIPAL.get()
     olaylar.append({"ts": simdi(), "kimden": kimden, "olay": olay,
+                    "actor_trust": "verified_hmac" if principal else "local_unverified",
                     "not": not_metni or ""})
 
 
@@ -1753,13 +2295,16 @@ def gorev_guncelle(fn):
 
 
 def cmd_gorev_ekle(a):
+    _gorev_principal_dogrula(a)
     ata = coz_kimlik(a.ata) or a.ata
     ust_gorev_id = a.ust_gorev_id
 
     def _ekle(gb):
-        gorevli, hata = gorevli_kimligi_dogrula(a.gorevli, durum_oku())
-        if hata:
-            sys.exit(hata)
+        gorevli = None
+        if a.gorevli:
+            gorevli, hata = gorevli_kimligi_dogrula(a.gorevli, durum_oku())
+            if hata:
+                sys.exit(hata)
         yeni_id = gb["siradaki"]
         hata = ust_gorev_dogrula(gb, ust_gorev_id, yeni_id)
         if hata:
@@ -1776,7 +2321,6 @@ def cmd_gorev_ekle(a):
         return g
 
     g = gorev_guncelle(_ekle)
-    kullanici_dokun(a.from_)
     mesaj_ekle(a.from_, f"📋 görev #{g['id']}: {a.baslik}"
                + (f" → @{goster_ad(ata)}" if ata else " (atanmayı bekliyor)"),
                kime=(ata or "@hepsi"), tur="gorev")
@@ -1784,6 +2328,7 @@ def cmd_gorev_ekle(a):
 
 
 def cmd_gorev_ata(a):
+    _gorev_principal_dogrula(a)
     kime = (coz_kimlik(a.kime) or a.kime) if a.kime else None
     def _ata(gb):
         g = gorev_bul(gb, a.id)
@@ -1817,7 +2362,6 @@ def cmd_gorev_ata(a):
         return g, False, yeni_gorevli
 
     g, yalniz_gorevli, yeni_gorevli = gorev_guncelle(_ata)
-    kullanici_dokun(a.from_)
     if yalniz_gorevli:
         mesaj_ekle(a.from_, f"🧰 #{g['id']} ({g['baslik']}) ilk kontrol görevlisi @{yeni_gorevli} oldu",
                    kime=yeni_gorevli, tur="gorev")
@@ -1829,6 +2373,8 @@ def cmd_gorev_ata(a):
 
 
 def cmd_gorev_al(a):
+    _gorev_principal_dogrula(a)
+    _gorev_rol_dogrula(a, "isci")
     def _al(gb):
         g = gorev_bul(gb, a.id)
         if not g:
@@ -1850,13 +2396,103 @@ def cmd_gorev_al(a):
         return g
 
     g = gorev_guncelle(_al)
-    kullanici_dokun(a.from_)
     mesaj_ekle(a.from_, f"🔨 #{g['id']} ({g['baslik']}) üstlendim, çalışıyorum",
                kime=g["kimden"], tur="not")
     print(f"✅ #{g['id']} üstlenildi")
 
 
+def cmd_gorev_sonraki(a):
+    """En düşük ID'li uygun işi tek .kilit altında oku-seç-ata ile üstlen."""
+    _gorev_principal_dogrula(a)
+    _gorev_rol_dogrula(a, "isci")
+    kimlik = a.from_
+    with kilit_tut():
+        gb = gorev_yukle()
+        gorulen = set()
+        bilinen = {"pending", "assigned", "pending_revision",
+                   "pending_gorevli_review", "pending_verification",
+                   "verified", "dropped"}
+        for g in gb["gorevler"]:
+            gid = g.get("id")
+            if (isinstance(gid, bool) or not isinstance(gid, int) or gid < 1):
+                raise VeriHatasi(
+                    f"gorevler.json: görev ID'si kanonik pozitif tamsayı değil: {gid!r}")
+            if gid in gorulen:
+                raise VeriHatasi(
+                    f"gorevler.json: görev ID'si tekil değil: #{gid}")
+            gorulen.add(gid)
+            if g.get("durum") not in bilinen:
+                raise VeriHatasi(
+                    f"gorevler.json: #{gid} tanınmayan durum: {g.get('durum')!r}")
+            assignee = g.get("assignee")
+            if assignee is not None and not isinstance(assignee, str):
+                raise VeriHatasi(
+                    f"gorevler.json: #{gid} 'assignee' metin veya null olmalı")
+
+        atanmis = sorted(
+            (g for g in gb["gorevler"]
+             if g.get("assignee") == kimlik and g.get("durum") == "assigned"),
+            key=lambda g: g["id"])
+        if len(atanmis) > 1:
+            kimlikler = ", ".join(f"#{g['id']}" for g in atanmis)
+            sys.exit(
+                f"birden fazla atanmış görevin var ({kimlikler}); "
+                "tek aktif görev kuralı ihlal edilmiş, yeni görev alınmadı")
+
+        revizyonlar = sorted(
+            (g for g in gb["gorevler"]
+             if g.get("assignee") == kimlik
+             and g.get("durum") == "pending_revision"),
+            key=lambda g: g["id"])
+        if len(revizyonlar) > 1:
+            kimlikler = ", ".join(f"#{g['id']}" for g in revizyonlar)
+            sys.exit(
+                f"birden fazla pending_revision görevin var ({kimlikler}); "
+                "hangisinin önceleceği belirsiz, yeni görev alınmadı")
+
+        if atanmis:
+            if revizyonlar:
+                sys.exit(
+                    f"zaten atanmış görevin var (#{atanmis[0]['id']}); "
+                    f"pending_revision #{revizyonlar[0]['id']} öncelikli olsa da "
+                    "aktif iş bitmeden yeni görev alınmadı")
+            sys.exit(
+                f"zaten atanmış görevin var (#{atanmis[0]['id']}); "
+                "ikinci görev alınmadı")
+
+        if revizyonlar:
+            g = revizyonlar[0]
+            g["assignee"] = kimlik
+            g["durum"] = "assigned"
+            gorev_olay_ekle(
+                g, kimlik, "Üstlenildi (sonraki: pending_revision önceliği)")
+            secim = "pending_revision önceliği"
+        else:
+            adaylar = sorted(
+                (g for g in gb["gorevler"]
+                 if g.get("durum") == "pending"
+                 and g.get("assignee") in (None, "", kimlik)),
+                key=lambda g: g["id"])
+            if not adaylar:
+                print("ℹ️ uygun görev yok "
+                      "(pending veya sana ait pending_revision bulunamadı)")
+                return
+            g = adaylar[0]
+            g["assignee"] = kimlik
+            g["durum"] = "assigned"
+            gorev_olay_ekle(g, kimlik, "Üstlenildi (sonraki)")
+            secim = "sıradaki pending"
+
+        kaydet(GOREV, gb)
+
+    mesaj_ekle(kimlik, f"🔨 #{g['id']} ({g['baslik']}) üstlendim, çalışıyorum",
+               kime=g["kimden"], tur="not")
+    print(f"✅ #{g['id']} üstlenildi ({secim})")
+
+
 def cmd_gorev_teslim(a):
+    _gorev_principal_dogrula(a)
+    _gorev_rol_dogrula(a, "isci")
     def _teslim(gb):
         g = gorev_bul(gb, a.id)
         if not g:
@@ -1893,7 +2529,6 @@ def cmd_gorev_teslim(a):
         return g
 
     g = gorev_guncelle(_teslim)
-    kullanici_dokun(a.from_)
     hedef = g.get("gorevli_kimlik") if g.get("durum") == "pending_gorevli_review" else "@hepsi"
     kuyruk = "ilk kontrol bekliyor" if g.get("durum") == "pending_gorevli_review" else "denetim bekliyor"
     mesaj_ekle(a.from_, f"📦 #{g['id']} ({g['baslik']}) teslim edildi → {kuyruk}"
@@ -1915,6 +2550,7 @@ def gorevli_kimligi_dogrula(kimlik, durum=None):
 
 
 def cmd_gorev_ilk_kontrol(a):
+    _gorev_principal_dogrula(a)
     def _kontrol(gb):
         g = gorev_bul(gb, a.id)
         if not g:
@@ -1938,7 +2574,6 @@ def cmd_gorev_ilk_kontrol(a):
         return g, olay
 
     g, olay = gorev_guncelle(_kontrol)
-    kullanici_dokun(a.from_)
     mesaj_ekle(a.from_, f"🧰 #{g['id']} ({g['baslik']}) {olay}"
                + (f" — {a.not_}" if a.not_ else ""),
                kime=g.get("assignee") or "@hepsi", tur="denetim")
@@ -1946,6 +2581,7 @@ def cmd_gorev_ilk_kontrol(a):
 
 
 def cmd_gorev_denetle(a):
+    _gorev_principal_dogrula(a)
     def _denetle(gb):
         g = gorev_bul(gb, a.id)
         if not g:
@@ -1977,7 +2613,6 @@ def cmd_gorev_denetle(a):
         return g, olay, tur, isaret
 
     g, olay, tur, isaret = gorev_guncelle(_denetle)
-    kullanici_dokun(a.from_)
     mesaj_ekle(a.from_, f"{isaret} #{g['id']} ({g['baslik']}) {olay}"
                + (f" — {a.not_}" if a.not_ else ""),
                kime=g.get("assignee") or "@hepsi", tur=tur)
@@ -1985,6 +2620,7 @@ def cmd_gorev_denetle(a):
 
 
 def cmd_gorev_iptal(a):
+    _gorev_principal_dogrula(a)
     def _iptal(gb):
         g = gorev_bul(gb, a.id)
         if not g:
@@ -1999,8 +2635,621 @@ def cmd_gorev_iptal(a):
         return g
 
     g = gorev_guncelle(_iptal)
-    kullanici_dokun(a.from_)
     print(f"✅ #{g['id']} iptal")
+
+
+def _doctor_path(path, home):
+    """Expand only the systemd %h/home token; do not evaluate shell syntax."""
+    raw = os.fspath(path).replace("%h", os.fspath(home))
+    return Path(raw).expanduser()
+
+
+def _doctor_unit_fields(path):
+    """Read only path directives needed for diagnosis; ignore all other env."""
+    fields = {"WorkingDirectory": None, "ExecStart": None, "YUVA_DIR": None}
+    try:
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+    except OSError as e:
+        return None, type(e).__name__
+    except UnicodeError:
+        return None, "UnicodeError"
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith(("#", ";")) or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key in ("WorkingDirectory", "ExecStart"):
+            fields[key] = value.strip()
+        elif key == "Environment":
+            try:
+                tokens = shlex.split(value, comments=False, posix=True)
+            except ValueError:
+                continue
+            for token in tokens:
+                if token.startswith("YUVA_DIR="):
+                    fields["YUVA_DIR"] = token.partition("=")[2]
+    return fields, None
+
+
+def _doctor_norm(path, home):
+    if not path:
+        return None
+    try:
+        return _doctor_path(path, home).resolve(strict=False)
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+def _doctor_panel_port(port, tcp_paths=None):
+    """Read procfs TCP tables; never connect, bind, or signal a process."""
+    tcp_paths = tcp_paths or (Path("/proc/net/tcp"), Path("/proc/net/tcp6"))
+    found_table = False
+    for path in tcp_paths:
+        try:
+            lines = Path(path).read_text(encoding="ascii").splitlines()
+        except OSError:
+            continue
+        found_table = True
+        for line in lines[1:]:
+            columns = line.split()
+            if len(columns) < 4:
+                continue
+            try:
+                local_port = int(columns[1].rsplit(":", 1)[1], 16)
+            except (IndexError, ValueError):
+                continue
+            if local_port == port and columns[3].upper() == "0A":
+                return "occupied", "LISTEN kaydı var; süreç sahibi doğrulanmadı"
+    if found_table:
+        return "no_listener_observed", "procfs anlık görüntüsünde dinleyici yok; yarış ihtimali sürer"
+    return "unknown", "procfs TCP tabloları okunamadı"
+
+
+def _doctor_cli_entry(path, install_root):
+    """Prove the supported PATH entry resolves to the selected current CLI."""
+    path = Path(path)
+    install_root = Path(install_root)
+    try:
+        entry = path.lstat()
+    except FileNotFoundError:
+        return "unknown", f"path={path}; CLI PATH symlink'i yok"
+    except OSError as e:
+        return "unknown", f"path={path}; metadata okunamadı ({type(e).__name__})"
+    if not stat.S_ISLNK(entry.st_mode):
+        return "fail", f"path={path}; düzenli symlink değil, kopya CLI desteklenmiyor"
+    try:
+        link_value = os.readlink(path)
+        selected = path.resolve(strict=True)
+        current = (install_root / "current").resolve(strict=True)
+        releases = (install_root / "releases").resolve(strict=True)
+        current.relative_to(releases)
+        expected = (current / "bin" / "yuva").resolve(strict=True)
+        selected_stat = selected.stat()
+    except (OSError, RuntimeError, ValueError) as e:
+        return "fail", f"path={path} target/current doğrulanamadı ({type(e).__name__})"
+    if (not stat.S_ISREG(selected_stat.st_mode)
+            or not selected_stat.st_mode & 0o111
+            or selected != expected):
+        return "fail", (f"path={path} link={link_value}; current/bin/yuva ile eşleşmiyor; "
+                         "eski veya bağımsız CLI desteklenmiyor")
+    return "pass", f"path={path} link={link_value}; current release CLI ile eşleşiyor"
+
+
+def _doctor_code_alignment(cli_path, code_root, user_bin_path, install_root):
+    """Compare the running CLI, PATH target, selected panel source and current release."""
+    try:
+        cli = Path(cli_path).resolve(strict=True)
+        panel = (Path(code_root) / "panel" / "server.py").resolve(strict=True)
+        path_cli = Path(user_bin_path).resolve(strict=True)
+        current = (Path(install_root) / "current").resolve(strict=True)
+        expected_cli = (current / "bin" / "yuva").resolve(strict=True)
+        expected_panel = (current / "panel" / "server.py").resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        return "unknown", f"CLI/PATH/panel/current eşleşmesi çözümlenemedi ({type(exc).__name__})"
+    cli_ok = cli == expected_cli and path_cli == expected_cli
+    panel_ok = panel == expected_panel
+    cli_release = cli.parent.parent
+    panel_release = panel.parent.parent
+    same_release = cli_release == panel_release == current
+    state = "pass" if cli_ok and panel_ok and same_release else "fail"
+    detail = (f"running_cli={cli} path_cli={path_cli} panel_source={panel} "
+              f"current={current}; same_release={same_release}")
+    if state == "fail":
+        detail += "; PATH, yuva panel kaynağı ve current aynı release değil (NO-GO)"
+    return state, detail
+
+
+def _doctor_legacy_copies(home, canonical_cli, canonical_panel, known_paths=None):
+    """Inventory known old copies by metadata only; never execute or inspect code."""
+    if known_paths is None:
+        home = Path(home)
+        known_paths = (
+            home / "yuva" / "bin" / "yuva",
+            home / "yuva" / "panel" / "server.py",
+            home / "yuva-dev" / "bin" / "yuva",
+            home / "yuva-dev" / "panel" / "server.py",
+            home / "yuva-ui-dev" / "bin" / "yuva",
+            home / "yuva-ui-dev" / "panel" / "server.py",
+        )
+        backup_root = home / "yuva-yedek"
+        try:
+            backup_dirs = sorted(p for p in backup_root.iterdir()
+                                 if p.name.startswith("restore-check.") and p.is_dir())
+        except OSError:
+            backup_dirs = []
+        for backup in backup_dirs[:8]:
+            known_paths += (backup / "yuva" / "bin" / "yuva",)
+    found = []
+    errors = []
+    for raw_path in known_paths:
+        path = Path(raw_path)
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            errors.append(f"{path} ({type(exc).__name__})")
+            continue
+        try:
+            real = path.resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            found.append(f"{path} (çözümlenemiyor:{type(exc).__name__})")
+            continue
+        expected = canonical_cli if path.name == "yuva" else canonical_panel
+        relation = "canonical hedef" if real == expected else "ayrı/eski kopya"
+        found.append(f"{path} -> {real} [{relation}]")
+    if errors:
+        return "unknown", "bazı bilinen yolların metadata'sı okunamadı: " + "; ".join(errors)
+    if found:
+        return "unknown", ("bilinen CLI/panel kopyası var; etkin writer olup olmadığı "
+                            "salt-okunur envanterle kanıtlanamaz: " + "; ".join(found))
+    return "pass", "bilinen legacy CLI/panel kopyası gözlenmedi (tam dosya taraması yapılmadı)"
+
+
+def _doctor_schema_writer(data_root):
+    """Read schema metadata only; never include JSON/JSONL payloads in output."""
+    root = Path(data_root)
+    supported_json = {DATA_SCHEMA_VERSION}
+    observations = []
+    unknown = []
+    unsupported = []
+    for name in ("durum.json", "gorevler.json"):
+        path = root / name
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            unknown.append(f"{name}: yok")
+            continue
+        except OSError as exc:
+            unknown.append(f"{name}: metadata {type(exc).__name__}")
+            continue
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 8 * 1024 * 1024:
+            unknown.append(f"{name}: tür/boyut incelenemedi")
+            continue
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            unknown.append(f"{name}: parse {type(exc).__name__}")
+            continue
+        version = document.get("schema_version", 1) if isinstance(document, dict) else None
+        if type(version) is not int:
+            unsupported.append(f"{name}: geçersiz schema_version")
+        elif version not in supported_json:
+            unsupported.append(f"{name}: schema_version={version}")
+        else:
+            observations.append(f"{name}=v{version}")
+
+    messages = root / "mesaj.jsonl"
+    try:
+        message_info = messages.lstat()
+    except FileNotFoundError:
+        observations.append("mesaj.jsonl=empty")
+    except OSError as exc:
+        unknown.append(f"mesaj.jsonl: metadata {type(exc).__name__}")
+    else:
+        if not stat.S_ISREG(message_info.st_mode) or message_info.st_size > 64 * 1024 * 1024:
+            unknown.append("mesaj.jsonl: tür/boyut incelenemedi")
+        else:
+            try:
+                with messages.open("rb") as stream:
+                    for number, line in enumerate(stream, 1):
+                        if len(line) > 1024 * 1024:
+                            unknown.append(f"mesaj.jsonl: satır {number} sınırı aşıyor")
+                            break
+                        try:
+                            record = json.loads(line.decode("utf-8"))
+                        except (UnicodeError, json.JSONDecodeError):
+                            unknown.append(f"mesaj.jsonl: satır {number} geçersiz")
+                            break
+                        if not isinstance(record, dict):
+                            unknown.append(f"mesaj.jsonl: satır {number} nesne değil")
+                            break
+                        version = record.get("schema_version", 1)
+                        if type(version) is not int or version not in MESSAGE_SCHEMA_VERSIONS:
+                            unsupported.append(f"mesaj.jsonl: satır {number} desteklenmeyen sürüm")
+                            break
+            except OSError as exc:
+                unknown.append(f"mesaj.jsonl: okuma {type(exc).__name__}")
+            else:
+                if not unknown and not unsupported:
+                    observations.append("mesaj.jsonl=legacy/v1/v2")
+
+    contract = (f"supported_writer_contract=yuva-data-contract/v{DATA_SCHEMA_VERSION}; "
+                f"json_schema=v{DATA_SCHEMA_VERSION}; "
+                f"message_schema={','.join(str(v) for v in sorted(MESSAGE_SCHEMA_VERSIONS))}")
+    if unsupported:
+        return "fail", f"{contract}; desteklenmeyen kayıt bulundu (NO-GO)"
+    if unknown:
+        return "unknown", f"{contract}; uyumluluk kanıtlanamadı: " + "; ".join(unknown)
+    return "pass", f"{contract}; observed=" + ", ".join(observations)
+
+
+def _doctor_release_id(value):
+    return (isinstance(value, str)
+            and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})-[0-9a-f]{64}",
+                             value) is not None)
+
+
+def _doctor_pointer_release(install_root, pointer_name):
+    """Resolve a canonical installer pointer without following arbitrary paths."""
+    root = Path(install_root)
+    try:
+        root_info = root.lstat()
+        root_real = root.resolve(strict=True)
+        if (stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode)
+                or root_info.st_uid != os.geteuid()
+                or stat.S_IMODE(root_info.st_mode) != 0o700):
+            return None, "install_root_type_invalid"
+        releases = root_real / "releases"
+        releases_info = releases.lstat()
+        if (stat.S_ISLNK(releases_info.st_mode)
+                or not stat.S_ISDIR(releases_info.st_mode)
+                or releases_info.st_uid != os.geteuid()
+                or stat.S_IMODE(releases_info.st_mode) != 0o700):
+            return None, "release_directory_invalid"
+        pointer = root_real / pointer_name
+        pointer_info = pointer.lstat()
+        if not stat.S_ISLNK(pointer_info.st_mode):
+            return None, f"{pointer_name}_pointer_invalid"
+        target = os.readlink(pointer)
+        prefix = "releases/"
+        release_id = target[len(prefix):] if target.startswith(prefix) else ""
+        if (not _doctor_release_id(release_id)
+                or target != prefix + release_id):
+            return None, f"{pointer_name}_target_invalid"
+        release = releases / release_id
+        release_info = release.lstat()
+        if stat.S_ISLNK(release_info.st_mode) or not stat.S_ISDIR(release_info.st_mode):
+            return None, f"{pointer_name}_release_invalid"
+        return release_id, None
+    except FileNotFoundError:
+        return None, f"{pointer_name}_missing"
+    except (OSError, RuntimeError):
+        return None, f"{pointer_name}_unavailable"
+
+
+def _doctor_manifest_contract(install_root, release_id):
+    """Read only the stored contract projection; this does not verify a pin."""
+    fd = None
+    directory_fd = None
+    try:
+        root = Path(install_root).resolve(strict=True)
+        directory = root / "manifests"
+        directory_info = directory.lstat()
+        if (stat.S_ISLNK(directory_info.st_mode)
+                or not stat.S_ISDIR(directory_info.st_mode)
+                or directory_info.st_uid != os.geteuid()
+                or stat.S_IMODE(directory_info.st_mode) != 0o700):
+            return None, "manifest_directory_invalid"
+        directory_fd = os.open(
+            directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0))
+        fd = os.open(f"{release_id}.manifest.json",
+                     os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                     dir_fd=directory_fd)
+        info = os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1
+                or info.st_size > 4 * 1024 * 1024):
+            return None, "manifest_metadata_invalid"
+        with os.fdopen(fd, "rb") as stream:
+            fd = None
+            raw = stream.read(4 * 1024 * 1024 + 1)
+        if len(raw) > 4 * 1024 * 1024:
+            return None, "manifest_size_invalid"
+
+        def unique_object(pairs):
+            value = {}
+            for key, item in pairs:
+                if key in value:
+                    raise ValueError("duplicate manifest key")
+                value[key] = item
+            return value
+
+        manifest = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_object)
+        validator_path = CODE_ROOT / "release_manifest.py"
+        validator_spec = importlib.util.spec_from_file_location(
+            "yuva_doctor_release_manifest", validator_path)
+        if validator_spec is None or validator_spec.loader is None:
+            return None, "manifest_validator_unavailable"
+        validator = importlib.util.module_from_spec(validator_spec)
+        validator_spec.loader.exec_module(validator)
+        manifest = validator._validate_manifest_shape(manifest)
+        if manifest.get("release_id") != release_id:
+            return None, "manifest_identity_invalid"
+        data_contract = manifest.get("data_contract")
+        if not isinstance(data_contract, dict):
+            return None, "data_contract_missing"
+        compatibility = data_contract.get("schema_compatibility")
+        if not isinstance(compatibility, str) or not compatibility:
+            return None, "data_contract_unknown"
+        return compatibility, None
+    except FileNotFoundError:
+        return None, "manifest_missing"
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError,
+            TypeError, RecursionError):
+        return None, "manifest_unavailable_or_malformed"
+    finally:
+        if fd is not None:
+            os.close(fd)
+        if directory_fd is not None:
+            os.close(directory_fd)
+
+
+def _doctor_rollback_data_schema(install_root, data_root_state,
+                                 writer_schema_state):
+    """Project whether current/previous stored contracts are a rollback candidate.
+
+    Stored manifest metadata is not an external trust pin and cannot prove the
+    target reader, screen rows, auxiliary stores, or running process.
+    """
+    current_id, error = _doctor_pointer_release(install_root, "current")
+    if error:
+        return "unknown", f"current release metadata unavailable ({error})"
+    previous_id, error = _doctor_pointer_release(install_root, "previous")
+    if error:
+        return "unknown", f"rollback target metadata unavailable ({error})"
+    if previous_id == current_id:
+        return "fail", "NO-GO · previous rollback pointer current release ile aynı"
+    current_contract, error = _doctor_manifest_contract(install_root, current_id)
+    if error:
+        return "unknown", f"current data contract unavailable ({error})"
+    previous_contract, error = _doctor_manifest_contract(install_root, previous_id)
+    if error:
+        return "unknown", f"rollback data contract unavailable ({error})"
+
+    known_contract = f"yuva-data-contract/v{DATA_SCHEMA_VERSION}"
+    current_label = current_contract if current_contract == known_contract else "unknown"
+    previous_label = previous_contract if previous_contract == known_contract else "unknown"
+    if current_contract != previous_contract:
+        return "fail", (
+            "NO-GO · current ve rollback data contract eşleşmiyor; "
+            f"current={current_label} target={previous_label}")
+    if current_contract != known_contract:
+        return "fail", (
+            "NO-GO · eşit manifest schema_compatibility mevcut writer "
+            "sözleşmesi değil; contract=unknown")
+    if data_root_state == "fail":
+        return "fail", "NO-GO · actual data_root integrity kontrolü başarısız"
+    if data_root_state != "pass":
+        return "unknown", (
+            f"manifest projection={known_contract} eşit; actual data_root doğrulanmadı")
+    if writer_schema_state == "fail":
+        return "fail", (
+            f"NO-GO · actual JSON/JSONL writer_schema reddediyor; "
+            f"manifest projection={known_contract}")
+    if writer_schema_state != "pass":
+        return "unknown", (
+            f"manifest projection={known_contract} eşit; actual data schema bilinmiyor")
+    return "candidate", (
+        f"manifest projection=current={current_contract}, target={previous_contract}; "
+        "actual writer_schema destekleniyor. Yalnız koşullu aday; stored manifest pin'i, "
+        "target reader/writer, screen satırları, auxiliary store ve runtime doğrulanmadı")
+
+
+def doctor_raporu(*, home=None, cli_path=None, code_root=None, data_root=None,
+                  install_root=None, template_path=None, installed_unit=None,
+                  user_bin_path=None, tcp_paths=None, port=8686,
+                  legacy_paths=None):
+    """Return read-only preflight rows; payload values are never reported."""
+    home = Path(home) if home is not None else Path.home()
+    cli_path = Path(cli_path) if cli_path is not None else CALISAN
+    code_root = Path(code_root) if code_root is not None else CODE_ROOT
+    data_root = Path(data_root) if data_root is not None else KOK
+    install_root = (Path(install_root) if install_root is not None
+                    else home / ".local" / "opt" / "yuva")
+    template_path = (Path(template_path) if template_path is not None
+                     else code_root / "contrib" / "systemd" / "yuva-panel.service")
+    installed_unit = (Path(installed_unit) if installed_unit is not None
+                      else home / ".config" / "systemd" / "user" / "yuva-panel.service")
+    user_bin_path = (Path(user_bin_path) if user_bin_path is not None
+                     else home / ".local" / "bin" / "yuva")
+    rows = []
+
+    try:
+        selected_cli = cli_path.resolve(strict=False)
+        selected_code = code_root.resolve(strict=False)
+        selected_cli.relative_to(selected_code)
+        source_relation = "code_root içinde"
+    except ValueError:
+        source_relation = "code_root dışında"
+    except (OSError, RuntimeError):
+        selected_cli = cli_path.absolute()
+        selected_code = code_root.absolute()
+        source_relation = "kaynak bağı unknown"
+    rows.append(("cli_source", "observed",
+                 f"path={selected_cli} relation={source_relation}; release provenance doğrulanmadı"))
+    entry_state, entry_detail = _doctor_cli_entry(user_bin_path, install_root)
+    rows.append(("supported_cli_entry", entry_state, entry_detail))
+    alignment_state, alignment_detail = _doctor_code_alignment(
+        cli_path, code_root, user_bin_path, install_root)
+    rows.append(("cli_panel_release_alignment", alignment_state, alignment_detail))
+    legacy_state, legacy_detail = _doctor_legacy_copies(
+        home, (install_root / "current" / "bin" / "yuva").resolve(strict=False),
+        (install_root / "current" / "panel" / "server.py").resolve(strict=False),
+        known_paths=legacy_paths)
+    rows.append(("legacy_writer_inventory", legacy_state, legacy_detail))
+
+    data_root_state = "unknown"
+    try:
+        root_lstat = data_root.lstat()
+        root_real = data_root.resolve(strict=True)
+        root_stat = root_real.stat()
+    except FileNotFoundError:
+        rows.append(("data_root", "unknown",
+                     f"path={data_root.absolute()} oluşturulmamış; içerik okunmadı"))
+    except OSError as e:
+        rows.append(("data_root", "unknown",
+                     f"metadata okunamadı ({type(e).__name__}); içerik okunmadı"))
+    else:
+        mode = stat.S_IMODE(root_stat.st_mode)
+        issues = []
+        if stat.S_ISLNK(root_lstat.st_mode):
+            issues.append("girdi yolu symlink")
+        if not stat.S_ISDIR(root_stat.st_mode):
+            issues.append("hedef dizin değil")
+        if root_stat.st_uid != os.geteuid():
+            issues.append("sahip euid ile eşleşmiyor")
+        if mode != 0o700:
+            issues.append(f"mode {mode:04o}; beklenen 0700")
+        state = "fail" if issues else "pass"
+        detail = (f"path={root_real} owner={'match' if root_stat.st_uid == os.geteuid() else 'mismatch'} "
+                  f"mode={mode:04o}; payload değerleri raporlanmadı")
+        if issues:
+            detail += "; " + ", ".join(issues)
+        rows.append(("data_root", state, detail))
+        data_root_state = state
+
+    schema_state, schema_detail = _doctor_schema_writer(data_root)
+    rows.append(("writer_schema", schema_state, schema_detail))
+    rollback_schema_state, rollback_schema_detail = _doctor_rollback_data_schema(
+        install_root, data_root_state, schema_state)
+    rows.append(("rollback_data_schema", rollback_schema_state,
+                 rollback_schema_detail))
+
+    current = install_root / "current"
+    releases = install_root / "releases"
+    try:
+        current_lstat = current.lstat()
+    except FileNotFoundError:
+        rows.append(("current", "unknown",
+                     f"path={current}; current işaretçisi yok"))
+        current_target = None
+    except OSError as e:
+        rows.append(("current", "unknown",
+                     f"path={current}; metadata okunamadı ({type(e).__name__})"))
+        current_target = None
+    else:
+        if not stat.S_ISLNK(current_lstat.st_mode):
+            rows.append(("current", "fail", f"path={current}; symlink değil"))
+            current_target = None
+        else:
+            try:
+                link_value = os.readlink(current)
+                current_target = current.resolve(strict=True)
+            except OSError as e:
+                rows.append(("current", "fail",
+                             f"path={current}; işaretçi bozuk ({type(e).__name__})"))
+                current_target = None
+            else:
+                try:
+                    current_target.relative_to(releases.resolve(strict=False))
+                    in_releases = True
+                except (ValueError, OSError, RuntimeError):
+                    in_releases = False
+                required = (current_target / "bin" / "yuva").is_file() and (
+                    current_target / "panel" / "server.py").is_file()
+                state = "pass" if in_releases and required else "fail"
+                rows.append(("current", state,
+                             f"link={link_value} target={current_target}; "
+                             f"inside_releases={in_releases} cli_panel_files={required}"))
+
+    template, template_error = _doctor_unit_fields(template_path)
+    if template_error:
+        rows.append(("unit_template", "unknown",
+                     f"path={template_path}; okunamadı ({template_error})"))
+    else:
+        workdir = _doctor_norm(template.get("WorkingDirectory"), home)
+        exec_tokens = []
+        try:
+            if template.get("ExecStart"):
+                exec_tokens = shlex.split(template["ExecStart"], comments=False, posix=True)
+        except ValueError:
+            pass
+        script = next((token for token in exec_tokens
+                       if token.replace("%h", str(home)).endswith("/panel/server.py")), None)
+        template_data = _doctor_norm(template.get("YUVA_DIR"), home)
+        template_expected = (workdir == (install_root / "current").resolve(strict=False)
+                             and _doctor_norm(script, home) ==
+                             (install_root / "current" / "panel" / "server.py").resolve(strict=False)
+                             and template_data == data_root.resolve(strict=False))
+        detail = (f"path={template_path} workdir={workdir or 'unknown'} "
+                  f"panel_script={_doctor_norm(script, home) or 'unknown'} "
+                  f"YUVA_DIR={template_data or 'unset'}")
+        if not all((workdir, script, template_data)):
+            state = "unknown"
+            detail += "; gerekli direktif eksik"
+        else:
+            state = "pass" if template_expected else "fail"
+            if not template_expected:
+                detail += "; current/data root ile eşleşme yok"
+        rows.append(("unit_template", state, detail))
+
+    unit, unit_error = _doctor_unit_fields(installed_unit)
+    if unit_error == "FileNotFoundError":
+        rows.append(("installed_unit", "unknown",
+                     f"path={installed_unit}; dosya yok; unit runtime durumu sorgulanmadı"))
+    elif unit_error:
+        rows.append(("installed_unit", "unknown",
+                     f"path={installed_unit}; okunamadı ({unit_error})"))
+    else:
+        workdir = _doctor_norm(unit.get("WorkingDirectory"), home)
+        try:
+            exec_tokens = shlex.split(unit.get("ExecStart") or "", comments=False, posix=True)
+        except ValueError:
+            exec_tokens = []
+        script = next((token for token in exec_tokens
+                       if token.replace("%h", str(home)).endswith("/panel/server.py")), None)
+        unit_data = _doctor_norm(unit.get("YUVA_DIR"), home)
+        expected_script = (install_root / "current" / "panel" / "server.py").resolve(strict=False)
+        expected_workdir = (install_root / "current").resolve(strict=False)
+        expected_data = data_root.resolve(strict=False)
+        complete = all((workdir, script, unit_data))
+        matches = (workdir == expected_workdir
+                   and _doctor_norm(script, home) == expected_script
+                   and unit_data == expected_data)
+        state = "unknown" if not complete else ("pass" if matches else "fail")
+        detail = (f"path={installed_unit} workdir={workdir or 'unknown'} "
+                  f"panel_script={_doctor_norm(script, home) or 'unknown'} "
+                  f"YUVA_DIR={unit_data or 'unset'}; runtime durumu sorgulanmadı")
+        if complete and not matches:
+            detail += "; current/data root ile eşleşme yok"
+        rows.append(("installed_unit", state, detail))
+
+    port_state, port_detail = _doctor_panel_port(port, tcp_paths=tcp_paths)
+    rows.append((f"panel_port_{port}", port_state, port_detail + "; süreç durdurulmadı"))
+    rows.append(("auth_runtime", "unknown",
+                 "unit environment veya auth store okunmadı; auth etkinliği varsayılmadı"))
+    rows.append(("presence", "unknown",
+                 "heartbeat/veri dosyası okunmadı; çevrimiçi/çevrimdışı çıkarımı yapılmadı"))
+    return rows
+
+
+def cmd_doctor(a):
+    rows = doctor_raporu(install_root=a.install_root, port=a.port)
+    print("Yuva doctor · salt okunur; içerik ekrana yazılmaz, çalışan process doğrulanmaz")
+    for key, state, detail in rows:
+        print(f"[{state.upper()}] {key}: {detail}")
+    states = {row[1] for row in rows}
+    if states & {"fail", "occupied"}:
+        summary = "NO-GO · düzeltme/operatör incelemesi gerekli"
+    elif "unknown" in states:
+        summary = "UNKNOWN · kurulum hazır kabul edilemez"
+    else:
+        summary = "ÖN KONTROL · runtime veya release doğrulaması değildir"
+    if "candidate" in states:
+        summary += " · rollback schema adayı onay veya rollback izni değildir"
+    print(summary)
 
 
 def cmd_gorev_liste(a):
@@ -2012,9 +3261,251 @@ def cmd_protokol(bos):
 
 
 def cmd_panel(a):
+    if getattr(a, "action", None):
+        return cmd_panel_service(a)
     os.execv(sys.executable, [sys.executable,
                               str(CODE_ROOT / "panel" / "server.py"),
                               "--port", str(a.port)])
+
+
+def _panel_unit_sahibi(fragment, port):
+    """Only accept the exact, protected Yuva user unit for this code/data root."""
+    home = Path.home()
+    path = Path(fragment)
+    try:
+        st = path.lstat()
+        if (not stat.S_ISREG(st.st_mode) or stat.S_ISLNK(st.st_mode)
+                or st.st_uid not in (0, os.geteuid())
+                or st.st_mode & 0o022 or st.st_size > 65536):
+            return False, "unit dosyası güvenli sahiplik/izin koşulunu karşılamıyor"
+        for parent in path.parents:
+            pst = parent.stat()
+            sticky_root_tmp = (pst.st_uid == 0 and bool(pst.st_mode & stat.S_ISVTX))
+            if pst.st_mode & 0o022 and not sticky_root_tmp:
+                return False, "unit yolu güvenli dizin sahipliği/izin koşulunu karşılamıyor"
+    except OSError as e:
+        return False, f"unit dosyası okunamıyor ({type(e).__name__})"
+
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as e:
+        return False, f"unit dosyası okunamıyor ({type(e).__name__})"
+    aktif = [line.strip() for line in lines
+             if line.strip() and not line.lstrip().startswith(("#", ";"))]
+    if sum(line.startswith("ExecStart=") for line in aktif) != 1:
+        return False, "unit tek ve açık bir ExecStart içermiyor"
+    if any(line.startswith("EnvironmentFile=") for line in aktif):
+        return False, "unit EnvironmentFile kullanıyor; etkin veri kökü doğrulanamıyor"
+    data_env_count = 0
+    for line in aktif:
+        if line.startswith("Environment="):
+            try:
+                data_env_count += sum(token.startswith("YUVA_DIR=") for token in
+                                     shlex.split(line.partition("=")[2], comments=False,
+                                                 posix=True))
+            except ValueError:
+                return False, "unit Environment alanı çözümlenemiyor"
+    if data_env_count > 1:
+        return False, "unit birden fazla YUVA_DIR değeri tanımlıyor"
+
+    fields, error = _doctor_unit_fields(path)
+    if error:
+        return False, f"unit dosyası okunamıyor ({error})"
+    try:
+        tokens = shlex.split(fields.get("ExecStart") or "", comments=False, posix=True)
+    except ValueError:
+        return False, "unit ExecStart alanı çözümlenemiyor"
+    scripts = [t for t in tokens
+               if t.replace("%h", str(home)).endswith("/panel/server.py")]
+    if len(scripts) != 1:
+        return False, "unit tek bir panel/server.py çalıştırmıyor"
+    script = _doctor_norm(scripts[0], home)
+    workdir = _doctor_norm(fields.get("WorkingDirectory"), home)
+    expected_root = CODE_ROOT.resolve(strict=False)
+    if script != (expected_root / "panel" / "server.py").resolve(strict=False):
+        return False, "unit başka veya belirsiz bir panel kodunu çalıştırıyor"
+    if workdir != expected_root:
+        return False, "unit çalışma dizini seçili Yuva kod köküyle eşleşmiyor"
+    unit_data = _doctor_norm(fields.get("YUVA_DIR") or str(home / "yuva"), home)
+    if unit_data != KOK.resolve(strict=False):
+        return False, "unit veri kökü bu CLI'ın YUVA_DIR değeriyle eşleşmiyor"
+
+    def option(name, default):
+        values = []
+        for i, token in enumerate(tokens):
+            if token == name:
+                if i + 1 >= len(tokens):
+                    return None
+                values.append(tokens[i + 1])
+            elif token.startswith(name + "="):
+                values.append(token.partition("=")[2])
+        return values[0] if len(values) == 1 else (default if not values else None)
+
+    try:
+        unit_port = int(option("--port", "8686"))
+    except (TypeError, ValueError):
+        return False, "unit portu çözümlenemiyor"
+    host = option("--host", "127.0.0.1")
+    if unit_port != port or host not in ("127.0.0.1", "localhost", "::1"):
+        return False, "unit portu veya host değeri istenen Yuva paneliyle eşleşmiyor"
+    return True, "Yuva unit'i kod, veri kökü ve port ile eşleşiyor"
+
+
+def _panel_systemctl(prop):
+    try:
+        return subprocess.run(
+            ["systemctl", "--user", "show", "yuva-panel.service",
+             f"--property={prop}", "--value"],
+            capture_output=True, text=True, timeout=5, check=False)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return None, type(e).__name__
+
+
+def cmd_panel_service(a):
+    unit_result = _panel_systemctl("FragmentPath")
+    verified, reason, fragment = False, "systemd unit'i doğrulanamadı", ""
+    if isinstance(unit_result, tuple):
+        reason = f"systemd sorgusu başarısız ({unit_result[1]})"
+    elif unit_result.returncode != 0 or not unit_result.stdout.strip():
+        reason = "yuva-panel.service yüklü değil veya FragmentPath alınamadı"
+    else:
+        fragment = unit_result.stdout.strip()
+        verified, reason = _panel_unit_sahibi(fragment, a.port)
+        if verified:
+            id_result = _panel_systemctl("Id")
+            if isinstance(id_result, tuple) or id_result.returncode != 0 \
+                    or id_result.stdout.strip() != "yuva-panel.service":
+                verified = False
+                reason = "systemd unit kimliği yuva-panel.service olarak doğrulanamadı"
+        if verified:
+            dropin_result = _panel_systemctl("DropInPaths")
+            if isinstance(dropin_result, tuple) or dropin_result.returncode != 0 \
+                    or dropin_result.stdout.strip():
+                verified = False
+                reason = "systemd drop-in tanımı var veya doğrulanamıyor"
+        if verified:
+            reload_result = _panel_systemctl("NeedDaemonReload")
+            if isinstance(reload_result, tuple):
+                verified = False
+                reason = f"systemd unit yenileme durumu bilinmiyor ({reload_result[1]})"
+            elif reload_result.returncode != 0 or reload_result.stdout.strip() != "no":
+                verified = False
+                reason = "systemd unit dosyası ile yüklenmiş tanım eşleşmeyebilir"
+
+    port_state, port_detail = _doctor_panel_port(a.port)
+    if a.action == "status":
+        print(f"Yuva unit: {'doğrulandı' if verified else 'bilinmiyor'} ({reason})")
+        print(f"Port {a.port}: {port_state} ({port_detail})")
+        print("Dinleyici PID sahipliği doğrulanmadı; süreç durdurulmadı.")
+        if verified:
+            props = []
+            for prop in ("LoadState", "ActiveState", "SubState"):
+                state_result = _panel_systemctl(prop)
+                if isinstance(state_result, tuple) or state_result.returncode != 0:
+                    why = state_result[1] if isinstance(state_result, tuple) else "sorgu başarısız"
+                    props = []
+                    print(f"systemd durumu: bilinmiyor ({why})")
+                    break
+                props.append(state_result.stdout.strip() or "unknown")
+            if props:
+                print("systemd durumu: " + "/".join(props))
+        return
+
+    if not verified:
+        sys.exit(f"❌ işlem yapılmadı: {reason}; belirsiz süreçlere dokunulmadı")
+
+    state_result = _panel_systemctl("ActiveState")
+    if isinstance(state_result, tuple) or state_result.returncode != 0:
+        why = state_result[1] if isinstance(state_result, tuple) else "ActiveState alınamadı"
+        sys.exit(f"❌ işlem yapılmadı: systemd durumu doğrulanamadı ({why})")
+    active = state_result.stdout.strip() == "active"
+    if a.action == "stop" and not active:
+        if port_state == "occupied":
+            sys.exit("❌ Yuva unit'i etkin değil ama port dolu; dinleyici sahibi bilinmiyor, durdurulmadı")
+        print("ℹ️ doğrulanmış Yuva panel unit'i zaten etkin değil; süreç sinyali gönderilmedi")
+        return
+    if a.action == "start" and port_state == "occupied" and not active:
+        sys.exit("❌ port dolu ve Yuva unit'i etkin değil; dinleyici sahibi bilinmiyor, başlatılmadı")
+
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", a.action, "yuva-panel.service"],
+            capture_output=True, text=True, timeout=30, check=False)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        sys.exit(f"❌ systemd {a.action} isteği başarısız ({type(e).__name__}); PID sinyali gönderilmedi")
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "systemd hata verdi").strip()
+        sys.exit(f"❌ systemd {a.action} başarısız: {detail}; başka süreç durdurulmadı")
+    print(f"✅ yuva-panel.service {a.action} isteği tamamlandı")
+
+
+def _auth_provisioner_load():
+    """Load the offline-only initializer lazily; auth/server never import it."""
+    panel_path = str(CODE_ROOT / "panel")
+    inserted = panel_path not in sys.path
+    if inserted:
+        sys.path.insert(0, panel_path)
+    try:
+        import auth_provision_draft
+        return auth_provision_draft
+    finally:
+        if inserted:
+            try:
+                sys.path.remove(panel_path)
+            except ValueError:
+                pass
+
+
+def cmd_auth_init(a):
+    """Create an empty v2 store offline; do not enroll credentials or enable auth."""
+    root = a.store_root
+    if not root.is_absolute() or ".." in root.parts:
+        raise VeriHatasi("auth init: --store-root mutlak ve .. içermeyen yol olmalı")
+    try:
+        provisioner = _auth_provisioner_load()
+        state = provisioner.empty_initial_state(a.instance_id, a.audience)
+        path = provisioner.write_initial_state(root, state)
+    except (ImportError, OSError):
+        raise VeriHatasi("auth init: offline provisioning aracı kullanılamıyor") from None
+    except Exception as error:
+        code = getattr(error, "code", None)
+        if isinstance(code, str) and code.isascii() and code.replace("_", "").isalnum():
+            raise VeriHatasi(f"auth init reddedildi ({code})") from None
+        raise
+    print("✅ boş auth-state v2 store ve stable lock oluşturuldu")
+    print(f"   root: {root} · instance_id: {a.instance_id} · audience: {a.audience}")
+    print("   anahtar/enrollment oluşturulmadı; YUVA_AUTH_ENABLED değiştirilmedi")
+
+
+def cmd_auth_provision(a):
+    """Exercise receipt-backed empty-store provisioning under the temp root only."""
+    root = a.store_root
+    if not root.is_absolute() or ".." in root.parts:
+        raise VeriHatasi("auth provision: --store-root mutlak ve .. içermeyen yol olmalı")
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    lexical_root = Path(os.path.abspath(root))
+    try:
+        resolved_root = root.resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise VeriHatasi("auth provision: geçici store root mevcut ve gerçek dizin olmalı") from None
+    if (resolved_root != lexical_root or lexical_root == temp_root
+            or temp_root not in lexical_root.parents):
+        raise VeriHatasi("auth provision yalnız geçici dizin altındaki store root'ta çalışır")
+    try:
+        provisioner = _auth_provisioner_load()
+        status, receipt = provisioner.provision_empty_store_with_receipt(
+            root, operation_id=a.operation_id,
+            instance_id=a.instance_id, audience=a.audience)
+    except (ImportError, OSError):
+        raise VeriHatasi("auth provision: offline araç kullanılamıyor") from None
+    except Exception as error:
+        code = getattr(error, "code", None)
+        if isinstance(code, str) and code.isascii() and code.replace("_", "").isalnum():
+            raise VeriHatasi(f"auth provision reddedildi ({code})") from None
+        raise
+    print(f"✅ auth empty-store provision {status}")
+    print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
+    print("   key/enrollment yok; auth etkinleştirilmedi; yalnız geçici store kullanıldı")
 
 
 # ── ayrıştırıcı ───────────────────────────────────────────────────────
@@ -2024,6 +3515,7 @@ class P(argparse.ArgumentParser):
 
 
 def main():
+    os.umask(0o077)
     p = P(prog="yuva", description="🪹 model yuvası")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -2138,6 +3630,16 @@ def main():
     s.add_argument("--panel")
     s.set_defaults(fn=cmd_gelen)
 
+    s = sub.add_parser("wait", help="doğrudan yeni mesajı data-only gözle; ack veya dispatch yapmaz")
+    s.add_argument("--from", dest="from_", required=True,
+                   help="durum.json içindeki tam kimlik anahtarı; görünen ad kabul edilmez")
+    s.add_argument("--after", required=True, help="snapshot içinde tekil bulunan message ID")
+    s.add_argument("--timeout", type=float, default=30.0,
+                   help="sonlu bekleme süresi (0-300 saniye; varsayılan 30)")
+    s.add_argument("--poll-interval", type=float, default=0.25,
+                   help="poll aralığı (0-2 saniye; varsayılan 0.25)")
+    s.set_defaults(fn=cmd_wait)
+
     s = sub.add_parser("tahta", help="görev tahtası")
     s.set_defaults(fn=cmd_tahta)
 
@@ -2149,10 +3651,15 @@ def main():
     s.add_argument("--detay")
     s.add_argument("--from", dest="from_", required=True)
     s.add_argument("--ata")
-    s.add_argument("--gorevli", required=True, help="ilk kontrolü yapacak görevli kimliği")
+    s.add_argument("--gorevli", help="isteğe bağlı ilk kontrolü yapacak görevli kimliği")
     s.add_argument("--ust-gorev", dest="ust_gorev_id", type=gorev_id_arg,
                    help="var olan üst görevin IDsi; verilmezse yeni görev köktür")
     s.set_defaults(fn=cmd_gorev_ekle)
+
+    s = gsub.add_parser(
+        "sonraki", help="sıradaki uygun görevi atomik olarak üstlen")
+    s.add_argument("--from", dest="from_", required=True)
+    s.set_defaults(fn=cmd_gorev_sonraki)
 
     for ad_, fn_, ekstra in [
         ("ata", cmd_gorev_ata, []),
@@ -2185,33 +3692,58 @@ def main():
     sub.add_parser("protokol", help="protokolü göster").set_defaults(fn=cmd_protokol)
 
     s = sub.add_parser("panel", help="web panelini başlat")
+    s.add_argument("action", nargs="?", choices=("start", "status", "stop"),
+                   help="doğrulanmış yuva-panel.service için start/status/stop")
     s.add_argument("--port", type=int, default=8686)
     s.set_defaults(fn=cmd_panel)
+
+    s = sub.add_parser("doctor", help="kurulum önkoşullarını salt okunur denetle")
+    s.add_argument("--install-root", type=Path,
+                   default=Path.home() / ".local" / "opt" / "yuva")
+    s.add_argument("--port", type=int, default=8686)
+    s.set_defaults(fn=cmd_doctor)
+
+    sa = sub.add_parser("auth", help="offline auth store hazırlama işlemleri")
+    auth_sub = sa.add_subparsers(dest="auth_cmd", required=True)
+    s = auth_sub.add_parser("init", help="boş auth-state v2 store ve sabit lock oluştur")
+    s.add_argument("--store-root", type=Path, required=True,
+                   help="önceden var olan, euid sahipliğinde 0700 mutlak dizin")
+    s.add_argument("--instance-id", required=True,
+                   help="bu Yuva instance'ı için kararlı ID")
+    s.add_argument("--audience", required=True,
+                   help="bu store için exact API audience")
+    s.set_defaults(fn=cmd_auth_init)
+
+    s = auth_sub.add_parser(
+        "provision", help="yalnız geçici store için idempotent empty-store provision fixture")
+    s.add_argument("--store-root", type=Path, required=True,
+                   help="önceden var olan TemporaryDirectory altında euid sahipli 0700 dizin")
+    s.add_argument("--instance-id", required=True)
+    s.add_argument("--audience", required=True)
+    s.add_argument("--operation-id", required=True,
+                   help="secret içermeyen ve retry boyunca sabit operasyon kimliği")
+    s.set_defaults(fn=cmd_auth_provision)
 
     a = p.parse_args()
     # kimlik/ad çözümleme: --from/--to/--ata/--kime hem kimlik hem görünen ad kabul eder
     try:
         for alan in ("from_", "to", "ata", "gorevli", "kime", "user"):
+            if a.cmd == "wait" and alan == "from_":
+                continue  # wait accepts an exact roster key, never a fuzzy display name
             deger = getattr(a, alan, None)
             if isinstance(deger, str) and deger:
                 k = coz_kimlik(deger)
                 if k:
                     setattr(a, alan, k)
-        a.fn(a)
-        # Kalp daemon'ı ölmüşse yaygın komutlardan sonra da güvenli biçimde onar.
-        # ayril/baglan/kalp-dongu kendi akışını yönetir; onlarda otomatik başlatma yok.
-        if (getattr(a, "from_", None)
-                and getattr(a, "cmd", None) not in
-                ("baglan", "katil", "ayril", "kalp", "kalp-dongu")):
-            try:
-                kalp_guven(a.from_, getattr(a, "panel", None))
-            except Exception as e:
-                saglik_guncelle(a.from_, "hata", f"kalp_guven: {e}")
+        result = a.fn(a)
+        if a.cmd == "wait":
+            raise SystemExit(result)
     except VeriHatasi as e:
         print(f"❌ {e}", file=sys.stderr)
         sys.exit(2)
     except OSError as e:
-        print(f"❌ dosya işlemi başarısız: {e}", file=sys.stderr)
+        number = e.errno if type(e.errno) is int and 0 <= e.errno <= 999 else "-"
+        print(f"❌ dosya işlemi başarısız (errno={number})", file=sys.stderr)
         sys.exit(2)
 
 
