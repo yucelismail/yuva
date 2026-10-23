@@ -296,13 +296,19 @@ class ReleaseManifestTests(unittest.TestCase):
         self._git(self.repo, "commit", "-qm", "add export-ignore fixture")
 
         archive = self.root / "export-ignore.tar"
-        self._git(self.repo, "archive", "--format=tar",
+        self._git(self.repo, "-c", "tar.umask=0022", "archive", "--format=tar",
                   f"--output={archive}", "HEAD")
         shutil.rmtree(self.payload)
         self.payload = self.root / "payload-from-git-archive"
         self.payload.mkdir()
         with tarfile.open(archive, "r:") as exported:
+            executable_mode = exported.getmember("bin/yuva").mode & 0o777
+            self.assertEqual(executable_mode, 0o755)
             exported.extractall(self.payload)
+        # Python versions differ in how faithfully extractall reapplies the
+        # archived mode under the process umask; preserve the recorded Git mode
+        # so this test stays focused on export-ignore eligibility.
+        (self.payload / "bin" / "yuva").chmod(executable_mode)
 
         manifest = self._manifest()
         raw = self._bytes(manifest)

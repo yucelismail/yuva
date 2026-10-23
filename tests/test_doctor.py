@@ -4,6 +4,7 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -373,7 +374,7 @@ class DoctorTests(unittest.TestCase):
         previous_manifest.chmod(0o600)
 
         hardlink = self.root / "manifest-hardlink"
-        hardlink.hardlink_to(previous_manifest)
+        os.link(str(previous_manifest), str(hardlink))
         by_key = {key: (state, detail) for key, state, detail in self.report()}
         self.assertEqual(by_key["rollback_data_schema"][0], "unknown")
         hardlink.unlink()

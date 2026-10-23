@@ -118,7 +118,8 @@ class ErrorRedactionTests(unittest.TestCase):
         try:
             raise RuntimeError(diagnostic)
         except RuntimeError as error:
-            traceback_report = "".join(traceback.format_exception(error))
+            traceback_report = "".join(traceback.format_exception(
+                type(error), error, error.__traceback__))
 
         class Handler:
             def _gonder(self, status, body):
