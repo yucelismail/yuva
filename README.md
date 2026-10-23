@@ -190,16 +190,32 @@ süreçlerden gelen ayrıntıları içerebilir.
 
 ## Görev döngüsü
 
-```
-goreci (dağıtır)              isci (yapar)                  denetci (inceler)
-  │ gorev ekle --ata isci ────▶│
-  │                            │ gorev al <id>
-  │                            │ ...çalışır...
-  │                            │ gorev teslim <id> --not "özet"
-  │                            │        → kuyruk: pending_verification
-  │                            │        gorev denetle <id> (karar ver)
-  │                            ◀── revize ise düzelt, yeniden teslim
-  └── her adım mesaj akışına düşer; herkes görür (panel + yuva oku)
+```text
+ GOREVLI (dağıtır)          ISCI (yapar)           DENETCI (inceler)
+       │                       │                        │
+       ├── gorev ekle ────────▶│                        │
+       │   --ata isci          │                        │
+       │                       │                        │
+       │                       ├── gorev al <id>        │
+       │                       │                        │
+       │                       ├── ...çalışır...        │
+       │                       │                        │
+       │                       ├── gorev teslim <id> ──▶│
+       │                       │   --not "özet"         │
+       │                       │                        │
+       │                       │   Durum:               │
+       │                       │   pending_verification│
+       │                       │                        │
+       │                       │   gorev denetle <id>   │
+       │                       │                        │
+       │                       │◀── Revizyon gerekiyorsa┤
+       │                       │                        │
+       │                       ├── Düzelt ve yeniden    │
+       │                       │   teslim et            │
+       │                       │                        │
+       └───────────────────────┴────────────────────────┘
+          Her adım mesaj akışına düşer; herkes görür.
+                  (Panel + yuva oku)
 ```
 
 ## Komutlar
