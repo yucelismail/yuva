@@ -3,6 +3,21 @@
 Bu belge mevcut bir Yuva kurulumundan yeni kod ağacına geçiş içindir. Eski ve
 yeni CLI/panel yazıcıları aynı veri dosyalarını eşzamanlı kullanmamalıdır.
 
+## Kaynak unit → entrypoint → rol eşlemesi
+
+Bu tablo depo içindeki tanımları gösterir; hostta kurulmuş/çalışan unit'leri
+göstermez.
+
+| Unit / başlatma biçimi | Entrypoint | Rol ve mevcut kaynak durumu |
+|---|---|---|
+| Kalıcı `yuva-panel.service` örneği: `contrib/systemd/yuva-panel.service` | `panel/server.py --host 127.0.0.1 --port 8686` | UI/API sunucusu; yalnız panel unit şablonu depoda bulunur. |
+| Tasarlanan transient `yuva-kalp-<hash>.service` | `bin/yuva kalp-dongu --host-supervised ...`; unit adı `bin/yuva:host_birim()` ile hesaplanır. | Ayrı bir `server.py` değildir. Geçerli kaynakta CLI başlatıcısı broker principal olmadığı için erken reddeder, `kalp-dongu` da hata verir; bu kaynak transient unit başlatmaz. Panel `/api/kalp` isteğini `503` ile reddeder. |
+| Elle çalıştırılan `preview/server.py` | `python3 preview/server.py` | 8687'de aday `panel/ui.html` ve statik sentetik fixture sunan salt-okunur geliştirici önizlemesi; Yuva servisi veya heartbeat değildir. |
+
+Bu eşleme statik kaynak bilgisidir. Kurulu unit, etkin süreç, host UID veya
+servis durumu incelenmiş sayılmaz. README'deki servis diyagramı da aynı ayrımı
+gösterir.
+
 ## Bilinen sınırlar ve veri geçişi
 
 Eski CLI'nin heartbeat süreçleri yeni sürümün `.kalp-<kimlik>.lock` flock'unu
@@ -12,28 +27,20 @@ PID dosyasını okuyup PID'ye sinyal göndermeyin; eski CLI'nin ayrılma komutun
 veya kurulumu yöneten servis/oturum yöneticisini kullanın, ardından süreçlerin
 kapandığını host üzerinde doğrulayın.
 
-Yeni heartbeat `systemd --user` geçici servisiyle çalışır. Host kullanıcı
-systemd yöneticisi ve D-Bus oturumu erişilebilir olmalı; CLI ile servis aynı
-KOK dosya sistemi/inode'larını görmeli ve host servisi panel URL'sine
-erişebilmelidir. Sandbox içindeki `localhost:8686`, host network namespace'inde
-aynı paneli göstermeyebilir. Bu koşullar sağlanmazsa CLI bağlantıyı yeşil
-başarı olarak göstermez. Kullanıcı systemd yöneticisi yoksa bağlantıyı
-sandbox dışındaki, kullanıcı yöneticisine bağlı host terminalinden başlatın.
-CLI ve servis başlangıçta yalnız KOK yolunu değil, KOK dizini ile heartbeat
-lock dosyasının `device:inode` kimliklerini de karşılaştırır; eşleşmezse
-heartbeat başlamaz.
+Güncel source gate nedeniyle heartbeat transient unit'i başlatılmaz:
+`host_kalp_baslat()` systemd çağrısından önce ret döndürür; `cmd_kalp()` ve
+`cmd_kalp_dongu()` da broker principal olmadan fail-closed kalır. Panel
+`api_kalp()` her isteği `503` ile reddeder. `yuva baglan ... --kalp-yok` yalnız
+roster kaydıdır; model presence/heartbeat üretmez. Bu nedenle normal geçişte
+heartbeat için D-Bus, network namespace, linger, interval veya lease beklentisi
+yoktur.
 
-Transient user unit Codex CLI/sandbox alt süreci kapansa da çalışır; kullanıcı
-systemd manager'ı durursa unit de durur. Logout sonrasında manager'ın yaşamaya
-devam etmesi için hostta `loginctl enable-linger "$USER"` gerekir. Transient
-unit reboot sonrası kalıcı değildir; reboot'tan sonra yeniden bağlanma gerekir.
-Kod bu sınırların dışında süreklilik garantisi vermez. Heartbeat aralığı 1–20
-saniyeyle sınırlıdır; panel lease'i 30 saniyedir.
-
-Panel `son_gorulme` alanını kullanıcı etkinliği için tutar; çevrimiçi durumunu
-yalnızca `son_kalp` alanındaki başarılı `/api/kalp` zamanından hesaplar. Eski
-kayıtlarda `son_kalp` bulunmadığı için ilk gerçek pulse gelene kadar kimlik
-çevrimdışı görünür. Mesaj, görev ve geçmiş kayıtları değiştirilmez.
+Eski sürüm daemon'larının durdurulması yine zorunludur; yeni source bu eski
+daemon'ları tekilleştirdiğini veya kapattığını kanıtlamaz. W1b/broker kapısı
+ileride onayla açılırsa transient unit'in systemd user manager ömrü, KOK
+device:inode eşleşmesi ve panel erişimi ayrıca uygulama ve host canary işi
+olarak doğrulanmalıdır. O zamana kadar panel `son_kalp` üretmez; eski
+heartbeat zamanları online kanıtı değildir.
 
 Bağlantıları kesmeden geçiş garantisi yoktur. Bu şart zorunluysa önce eski ve
 yeni sürümün kullanacağı ortak bir yazma servisi veya geriye uyumlu kilit
@@ -126,13 +133,10 @@ protokolü geliştirilip gerçek süreçlerle doğrulanmalıdır.
    aktarır.
 3. Panel servis komutunu yeni kaynak ağacındaki `panel/server.py` dosyasına
    yöneltin. `--host` loopback adresi olmalı; loopback dışı bind reddedilir.
-   CLI oturumlarının kullandığı hesapta `systemd --user` yöneticisinin ve
-   D-Bus bağlantısının erişilebilir olduğunu host terminalinde
-   `systemctl --user status` komutuyla doğrulayın. Komut kullanıcı yöneticisine
-   bağlanmıyorsa normal host kullanıcı oturumundan çalıştırın; sonra `yuva
-   baglan ...` komutunu aynı host terminalinde yeniden deneyin.
-   Sandbox/host ayrımında panel URL'si heartbeat servisinin host network
-   namespace'inden erişilebilir olmalıdır.
+   Paneli kalıcı user unit ile başlatacaksanız `systemd --user` yöneticisinin
+   erişimini hostta doğrulayın. `yuva baglan ... --kalp-yok` roster işlemi için
+   bu user manager gerekmez; mevcut heartbeat yolu kapalı olduğu için bu
+   sürümde sandbox/host heartbeat network koşulu da uygulanmaz.
    Paneli `systemd --user` ile yönetiyorsanız adaydaki
    `contrib/systemd/yuva-panel.service` örneğini kurun. Örnek `~/yuva` kod ve
    veri kökünü varsayar; bu geçişte kod `~/yuva-v2`, mevcut veri kökü ise
@@ -154,12 +158,12 @@ protokolü geliştirilip gerçek süreçlerle doğrulanmalıdır.
    Unit'i güncelledikten sonra `systemctl --user daemon-reload` ve
    `systemctl --user restart yuva-panel.service`; durdurmak için
    `systemctl --user stop yuva-panel.service` kullanın. Bu panel unit'i
-   heartbeat'in geçici systemd unit'inden ayrıdır: panel unit'i `enable` edildiği
-   için user manager başlayınca yeniden başlar; logout sonrası çalışması ve
-   reboot'ta manager'ın açılması için `loginctl enable-linger "$USER"` gerekir;
-   linger yoksa manager logoutta kapanır ve panel durur. Linger etkin değilken
-   panel sonraki kullanıcı oturumu açıldığında başlar. Heartbeat
-   unit'i reboot'ta kalıcı değildir; modelleri yeniden bağlayın. Farklı servis
+   heartbeat için geçici unit'inden ayrıdır: bu sürüm heartbeat unit'i
+   oluşturmaz. Panel unit'i `enable` edildiği için user manager başlayınca
+   yeniden başlar; logout sonrası çalışması ve reboot'ta manager'ın açılması
+   için `loginctl enable-linger "$USER"` gerekir; linger yoksa manager logoutta
+   kapanır ve panel durur. Linger etkin değilken panel sonraki kullanıcı oturumu
+   açıldığında başlar. Farklı servis
    yöneticisi kullanılıyorsa paneli onunla başlatıp durdurun; aynı anda yalnız bir
    panel 8686 portunu kullanmalıdır.
 4. Paneli (kurulu user service veya mevcut servis yöneticisiyle) başlatın ya da
@@ -174,24 +178,22 @@ protokolü geliştirilip gerçek süreçlerle doğrulanmalıdır.
    panelin kendi Host/Origin/Content-Type kontrolleri bu katmanın yerini tutmaz.
    Hata yanıtlarının işletim sistemi veya alt süreç ayrıntıları içerebileceğini
    de göz önünde bulundurun.
-5. Kullanıcı systemd oturumu bulunan sandbox dışı host terminalinden tek bir
-   modelle `yuva baglan <kimlik> --arac <arac> --rol <rol>` çalıştırın. CLI
-   host servisinin aynı KOK'u ve paneli kullandığını doğrulayınca bağlantı
-   başarılı olur. Panelde rolü, gerçek kalp zamanını ve tek heartbeat
-   sahipliğini doğrulayın. Kullanılan GET/POST yollarının Host, Origin ve JSON
-   içerik türü kontrollerini geçtiğini de doğrulayın. Sorun varsa diğer
-   modelleri bağlamadan rollback uygulayın.
-   Logout sonrası devamlılık isteniyorsa linger durumunu ve reboot sonrası
-   yeniden bağlanma davranışını ayrıca canary ile doğrulayın.
-6. Canary doğrulandıktan sonra modelleri küçük gruplarla bağlayın. Her gruptan
-   sonra ışıkları, görev/mesaj yazımlarını ve yinelenen heartbeat olmadığını
-   kontrol edin.
+5. Tek roster canary'si gerekiyorsa `yuva baglan <kimlik> --arac <arac> --rol
+   <rol> --kalp-yok` çalıştırın. Panel/CLI'nin aynı `YUVA_DIR` kullandığını ve
+   roster kaydını doğrulayın. Bu kaynakta panel presence'i `unknown` kalmalı;
+   başarılı roster kaydını online, gerçek kalp veya tek-worker kanıtı saymayın.
+   Kabul koşulu doğrulanmış presence ise geçişi NO-GO bırakın; broker/heartbeat
+   özelliği ayrı kabul edilmeden diğer modelleri canlı canary'ye almayın.
+6. Yalnız roster, görev ve mesaj akışları bu geçişin hedefiyse canary sonrası
+   modelleri küçük gruplarla bağlayın; presence doğrulamasının kapsam dışı ve
+   `unknown` olduğunu kayıt altında tutun.
 
 ## Rollback
 
-1. Yeni görev atamalarını durdurun ve bağlı modelleri kendi oturumlarından
-   `yuva ayril --from <kimlik>` ile ayırın. Kullanıcı systemd heartbeat
-   birimlerinin durduğunu doğrulayın. Model ve yönetici oturumlarına yeni
+1. Yeni görev atamalarını durdurun ve roster'a eklenmiş modelleri
+   `yuva ayril --from <kimlik>` ile ayırın. Eski/başka sürüm transient
+   heartbeat unit'leri varsa onları kendi servis yöneticisinden doğrulayın.
+   Model ve yönetici oturumlarına yeni
    candidate CLI/API yazımı göndermemelerini bildirin.
 2. Yeni paneli ve heartbeat süreçlerini durdurun. Başlamış tüm tek-atımlık
    candidate CLI çağrılarının bitmesini bekleyin; candidate CLI, panel kapansa
