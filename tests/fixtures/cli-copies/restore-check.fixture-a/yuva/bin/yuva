@@ -1,0 +1,897 @@
+#!/usr/bin/env python3
+# 🪹 yuva — farklı CLI/oturumlardaki modellerin ortak çalışma alanı
+# Komutlar: baglan, kalp, kalp-dongu, ayril, ad, ekran, durum, katil, kimler,
+#           yaz, oku, gelen, tahta, gorev ekle|ata|al|teslim|denetle|iptal,
+#           liste, protokol, panel
+import argparse
+import fcntl
+import json
+import os
+import random
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from datetime import datetime
+from pathlib import Path
+
+KOK = Path(os.environ.get("YUVA_DIR") or (Path.home() / "yuva"))
+YUVA = KOK
+KILIT = KOK / ".kilit"
+BUS = KOK / "mesaj.jsonl"
+STATE = KOK / "durum.json"
+GOREV = KOK / "gorevler.json"
+EKRAN = KOK / "ekran"
+CALISAN = Path(__file__).resolve()
+
+RENK = {"claude": "38;5;208", "codex": "36", "opencode": "35", "diger": "32"}
+ROL_AD = {"goreci": "görevli", "isci": "işçi", "denetci": "denetçi"}
+ROLLER = ("goreci", "isci", "denetci")
+ARACLAR = ("claude", "codex", "opencode", "diger")
+DURUM_AD = {
+    "pending": "sırada", "assigned": "atandı",
+    "pending_verification": "teslim✋", "verified": "onaylı✅",
+    "pending_revision": "revize✎", "dropped": "iptal🗑",
+}
+PANEL_VARSAYILAN = "http://localhost:8686"
+HTTP_SN = 1.5
+
+
+# ── temel yardımcılar ─────────────────────────────────────────────────
+
+def kilit():
+    KILIT.parent.mkdir(parents=True, exist_ok=True)
+    f = open(KILIT, "a+")
+    fcntl.flock(f, fcntl.LOCK_EX)
+    return f
+
+
+def yukle(p, varsayilan):
+    try:
+        return json.loads(Path(p).read_text(encoding="utf-8"))
+    except Exception:
+        return varsayilan
+
+
+def kaydet(p, v):
+    p = Path(p)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    tmp.write_text(json.dumps(v, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(tmp, p)
+
+
+def ekle_jsonl(yol, satir):
+    yol = Path(yol)
+    yol.parent.mkdir(parents=True, exist_ok=True)
+    f = kilit()
+    try:
+        with open(yol, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(satir, ensure_ascii=False) + "\n")
+    finally:
+        f.close()
+
+
+def simdi():
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def uid():
+    return f"{int(time.time() * 1000):x}-{random.randint(1000, 9999)}"
+
+
+def renkli(s, kod):
+    return f"\x1b[{kod}m{s}\x1b[0m"
+
+
+def guvenli(s):
+    t = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in str(s))[:64]
+    return ("_" + t.lstrip(".")) if t.startswith(".") else (t or "yok")
+
+
+def durum_oku():
+    d = yukle(STATE, {"kullanicilar": {}, "rev": 0})
+    d.setdefault("kullanicilar", {})
+    d.setdefault("rev", 0)
+    return d
+
+
+def coz_kimlik(anahtar):
+    """Kimlik çözümleme: önce anahtar, sonra görünen ad."""
+    ks = durum_oku()["kullanicilar"]
+    if not anahtar:
+        return None
+    anahtar = str(anahtar)
+    if anahtar in ks:
+        return anahtar
+    for k, v in ks.items():
+        if str(v.get("ad") or k).lstrip("@").lower() == anahtar.lstrip("@").lower():
+            return k
+    return None
+
+
+def goster_ad(kimlik):
+    ks = durum_oku()["kullanicilar"]
+    return ks.get(kimlik, {}).get("ad") or kimlik
+
+
+def kisi_renk(ad):
+    k = durum_oku()["kullanicilar"].get(ad, {})
+    return RENK.get(k.get("arac", "diger"), RENK["diger"])
+
+
+def kullanici_dokun(ad):
+    d = durum_oku()
+    k = d["kullanicilar"].setdefault(ad, {})
+    k["son_gorulme"] = simdi()
+    k.setdefault("katilma", simdi())
+    kaydet(STATE, d)
+
+
+def kime_norm(kime):
+    """Hedefi '@hepsi' / '@<görünen ad>' biçimine getirir."""
+    if not kime:
+        return "@hepsi"
+    k = str(kime).strip()
+    if k.startswith("#"):
+        return k
+    hedef = k.lstrip("@")
+    if hedef.lower() in ("hepsi", "all", "*", ""):
+        return "@hepsi"
+    kk = coz_kimlik(hedef)
+    return "@" + (goster_ad(kk) if kk else hedef)
+
+
+def mesaj_ekle(kimden, metin, kime="@hepsi", tur="not"):
+    m = {"id": uid(), "ts": simdi(), "kimden": kimden, "kime": kime_norm(kime),
+         "tur": tur, "metin": metin, "ad": goster_ad(kimden), "kanal": "sohbet"}
+    ekle_jsonl(BUS, m)
+    kullanici_dokun(kimden)
+    return m
+
+
+def mesajlar(n=50, filtre=None):
+    if not BUS.exists():
+        return []
+    satirlar = BUS.read_text(encoding="utf-8", errors="replace").splitlines()[-n * 3:]
+    ms = []
+    for s in satirlar:
+        try:
+            m = json.loads(s)
+        except Exception:
+            continue
+        m.setdefault("ad", m.get("kimden"))
+        ms.append(m)
+    if filtre:
+        ms = [m for m in ms if filtre(m)]
+    return ms[-n:]
+
+
+def bana_gelen(ad, kimlik=None):
+    hedefler = {"@hepsi", "@" + ad}
+    if kimlik:
+        hedefler.add("@" + kimlik)
+    return [m for m in mesajlar(400)
+            if m["kime"] in hedefler and m["kimden"] not in (ad, kimlik)]
+
+
+# ── panel köprüsü (hata yutulur, CLI asla bloke olmaz) ────────────────
+
+def panel_al(panel=None):
+    return (panel or os.environ.get("YUVA_PANEL") or PANEL_VARSAYILAN).rstrip("/")
+
+
+def http_iste(panel, yol, govde=None, sn=HTTP_SN):
+    url = panel_al(panel) + yol
+    try:
+        if govde is None:
+            istek = urllib.request.Request(url, method="GET")
+        else:
+            istek = urllib.request.Request(
+                url, data=json.dumps(govde, ensure_ascii=False).encode("utf-8"),
+                headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(istek, timeout=sn) as r:
+            return True, json.loads(r.read().decode("utf-8"))
+    except Exception as e:
+        return False, str(e)
+
+
+def panel_veri(panel=None):
+    ok, cevap = http_iste(panel, "/api/veri")
+    return cevap if ok else None
+
+
+def panel_kisi(kimlik, panel=None):
+    v = panel_veri(panel)
+    if not v:
+        return None
+    return v.get("kullanicilar", {}).get(kimlik)
+
+
+# ── kalp atışı (yeşil ışık) ──────────────────────────────────────────
+
+def pid_dosyasi(kimlik):
+    return KOK / f".kalp-{guvenli(kimlik)}.pid"
+
+
+def pid_yasiyor(pid):
+    try:
+        pid = int(pid)
+    except Exception:
+        return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+
+
+def atalar():
+    """Süreç zinciri: [(pid, comm), ...] — en yakın atadan dışa doğru."""
+    zincir = []
+    pid = os.getppid()
+    for _ in range(16):
+        if pid <= 1:
+            break
+        try:
+            stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+            comm = stat.rsplit(")", 1)[0].split("(", 1)[1]
+            ppid = int(stat.rsplit(")", 1)[1].split()[1])
+        except Exception:
+            break
+        zincir.append((pid, comm))
+        pid = ppid
+    return zincir
+
+
+def ata_pid_oku():
+    """Kalp daemon'ının ömür ölçütü: model oturumu süreci.
+
+    Sıra: (1) model/uygulama süreci (opencode/claude/codex) — komut çalıştıran alt
+    kabuklar GEÇİCİ olduğu ve terminal sekmeleri yenilendiğinde öldüğü için en
+    güvenilir çapa budur (glm/codex-2 gibi diğer modeller de buna çapalanır);
+    (2) en dıştaki kabuk (terminal); (3) doğrudan ebeveyn.
+    """
+    zincir = atalar()
+    oturum = [p for p, c in zincir
+              if c.startswith(("opencode", "claude", "codex"))]
+    if oturum:
+        return oturum[0], zincir
+    kabuklar = ("bash", "zsh", "sh", "fish", "ksh", "dash")
+    kabuk = [p for p, c in zincir if c in kabuklar]
+    if kabuk:
+        return kabuk[-1], zincir
+    return os.getppid(), zincir
+
+
+def daemon_baslat(kimlik, sn, panel, ttl=21600):
+    p = pid_dosyasi(kimlik)
+    if p.exists():
+        eski = p.read_text(encoding="utf-8").strip()
+        if pid_yasiyor(eski):
+            return eski, False, None
+        p.unlink(missing_ok=True)
+    ata, _zincir = ata_pid_oku()
+    args = [sys.executable, str(CALISAN), "kalp-dongu", "--from", kimlik,
+            "--pid", str(ata), "--sn", str(sn), "--ttl", str(ttl),
+            "--panel", panel_al(panel)]
+    try:
+        pr = subprocess.Popen(args, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                              start_new_session=True)
+    except Exception as e:
+        return None, f"başlatılamadı: {e}", ata
+    p.write_text(str(pr.pid), encoding="utf-8")
+    return pr.pid, True, ata
+
+
+def daemon_durdur(kimlik):
+    p = pid_dosyasi(kimlik)
+    if not p.exists():
+        return False
+    pid = p.read_text(encoding="utf-8").strip()
+    try:
+        os.kill(int(pid), 15)
+    except Exception:
+        pass
+    p.unlink(missing_ok=True)
+    return True
+
+
+def kalp_guven(kimlik, panel=None, sn=10):
+    """Işığı canlı tut: kalp daemon'ı ölmüşse (ör. terminal/süreç yenilendi) yeniden başlat.
+
+    `yuva ayril` ile ayrılan (bagli=False) bir kimlik için kendiliğinden başlatmaz.
+    """
+    d = durum_oku()
+    if not d["kullanicilar"].get(kimlik, {}).get("bagli"):
+        return None
+    p = pid_dosyasi(kimlik)
+    if p.exists() and pid_yasiyor(p.read_text(encoding="utf-8").strip()):
+        return None
+    pid, durum, _ata = daemon_baslat(kimlik, sn, panel)
+    if durum is True:
+        print(f"⚠️ ışık sönmüştü — kalp yeniden başlatıldı (pid {pid})")
+        return pid
+    return None
+
+
+def benzersiz_yerel(d, ad, haric=None):
+    alinan = {str(v.get("ad") or k).lower(): k
+              for k, v in d["kullanicilar"].items() if k != haric}
+    temel = (str(ad or "").strip() or "misafir")[:24]
+    if temel.lower() not in alinan:
+        return temel
+    i = 2
+    while f"{temel}-{i}".lower() in alinan:
+        i += 1
+    return f"{temel}-{i}"
+
+
+# ── komutlar ──────────────────────────────────────────────────────────
+
+def cmd_baglan(a):
+    kimlik = coz_kimlik(a.kimlik) or a.kimlik
+    d = durum_oku()
+    k = d["kullanicilar"].setdefault(kimlik, {"katilma": simdi()})
+    k["arac"] = a.arac
+    k["rol"] = a.rol
+    k["bagli"] = True
+    k["son_gorulme"] = simdi()
+    k.setdefault("katilma", simdi())
+    if a.ad:
+        k["ad"] = benzersiz_yerel(d, a.ad, haric=kimlik)
+    k.setdefault("ad", kimlik)
+    kaydet(STATE, d)
+
+    ok, cevap = http_iste(a.panel, "/api/katil",
+                          {"kimlik": kimlik, "arac": a.arac, "rol": a.rol,
+                           "ad": k.get("ad")})
+    ad = k.get("ad") or kimlik
+    if ok and isinstance(cevap, dict) and cevap.get("ok"):
+        ad = cevap.get("ad") or ad
+    else:
+        print(f"⚠️ panel kapalı ({panel_al(a.panel)}) — yerel modda bağlandın")
+
+    print(f"🟢 bağlandın: ad={ad} (kimlik: {kimlik}) · rol: {ROL_AD.get(a.rol, a.rol)}"
+          f" · panel: {panel_al(a.panel)}")
+
+    if a.kalp:
+        pid, durum, ata = daemon_baslat(kimlik, a.kalp_sn, a.panel,
+                                        getattr(a, "kalp_ttl", 21600))
+        ata_ad = ""
+        if ata:
+            try:
+                ata_ad = Path(f"/proc/{ata}/comm").read_text(encoding="utf-8").strip()
+            except Exception:
+                ata_ad = "?"
+        if durum is True:
+            print(f"   💚 kalp açık (pid {pid}, {a.kalp_sn} sn aralık, çapa: {ata_ad}/{ata})")
+        elif pid:
+            print(f"   💚 kalp zaten açık (pid {pid})")
+        else:
+            print(f"   ⚠️ kalp başlatılamadı: {durum}")
+    else:
+        print("   kalp kapalı (--kalp ile açılır)")
+    print(f"   📬 gelen kutun: yuva gelen --from {kimlik}")
+
+
+def cmd_kalp(a):
+    ok, cevap = http_iste(a.panel, "/api/kalp", {"kimlik": a.from_})
+    kullanici_dokun(a.from_)
+    if ok and isinstance(cevap, dict) and cevap.get("ok"):
+        print(f"💚 kalp gönderildi ({cevap.get('ad') or a.from_})")
+    else:
+        print(f"💚 kalp yerel kaydedildi ({goster_ad(a.from_)}) — panel: ⚪")
+
+
+def cmd_kalp_dongu(a):
+    panel = panel_al(a.panel)
+    bitis = time.time() + (a.ttl if a.ttl > 0 else 10 ** 9)
+    while time.time() < bitis:
+        if a.pid and not pid_yasiyor(a.pid):
+            pid_dosyasi(a.from_).unlink(missing_ok=True)
+            return
+        kullanici_dokun(a.from_)
+        http_iste(panel, "/api/kalp", {"kimlik": a.from_}, sn=1.0)
+        time.sleep(max(1, a.sn))
+
+
+def cmd_ayril(a):
+    d = durum_oku()
+    k = coz_kimlik(a.from_)
+    if k:
+        d["kullanicilar"][k]["bagli"] = False
+        kaydet(STATE, d)
+    daemon_durdur(k or a.from_)
+    ok, _ = http_iste(a.panel, "/api/ayril", {"kimlik": k or a.from_})
+    print(f"⚫ ayrıldın ({goster_ad(k or a.from_)}) · panel: {'🟢 bildirildi' if ok else '⚪ ulaşılamadı'}")
+
+
+def cmd_ad(a):
+    d = durum_oku()
+    k = coz_kimlik(a.from_) or a.from_
+    v = d["kullanicilar"].setdefault(k, {"katilma": simdi()})
+    eski = v.get("ad") or k
+    v["ad"] = benzersiz_yerel(d, a.yeni, haric=k if k in d["kullanicilar"] else None)
+    kaydet(STATE, d)
+    http_iste(a.panel, "/api/ad", {"kimlik": k, "ad": v["ad"]})
+    print(f"🏷️ adın artık: {v['ad']}" + ("" if v["ad"] == eski else f" ({eski} idi)"))
+
+
+def cmd_ekran(a):
+    if a.satir and a.satir[0] == "oku":
+        return cmd_ekran_oku(a)
+    if not a.satir:
+        sys.exit('kullanım: yuva ekran "satır" --from <kimlik>  |  yuva ekran oku')
+    from_ = a.from_ or os.environ.get("YUVA_KIMLIK")
+    if not from_:
+        sys.exit("--from <kimlik> gerekli (veya YUVA_KIMLIK ortam değişkeni)")
+    kimlik = coz_kimlik(from_) or from_
+    metin = " ".join(a.satir)
+    ok, cevap = http_iste(a.panel, "/api/ekran",
+                          {"kimlik": kimlik, "satir": metin, "tur": a.tur})
+    if ok and isinstance(cevap, dict) and cevap.get("ok"):
+        kullanici_dokun(kimlik)
+        kalp_guven(kimlik, a.panel)
+        return                      # panel yazdı (aynı dosya) → çift satır olmasın
+    ekle_jsonl(EKRAN / (guvenli(kimlik) + ".jsonl"),
+               {"ts": simdi(), "kimlik": kimlik, "ad": goster_ad(kimlik),
+                "tur": a.tur, "satir": metin})
+    kullanici_dokun(kimlik)
+    kalp_guven(kimlik, a.panel)
+    print("⚠️ panel kapalı — ekran yalnız yerel yazıldı")
+
+
+def cmd_ekran_oku(a):
+    dosyalar = []
+    if a.from_:
+        k = coz_kimlik(a.from_) or a.from_
+        dosyalar = [EKRAN / (guvenli(k) + ".jsonl")]
+    elif EKRAN.exists():
+        dosyalar = sorted(EKRAN.glob("*.jsonl"))
+    if not dosyalar:
+        print("(henüz ekran yok)")
+        return
+    for f in dosyalar:
+        if not f.exists():
+            continue
+        satirlar = []
+        for s in f.read_text(encoding="utf-8", errors="replace").splitlines()[-a.n:]:
+            try:
+                satirlar.append(json.loads(s))
+            except Exception:
+                continue
+        if not satirlar:
+            continue
+        kimlik = satirlar[-1].get("kimlik") or f.stem
+        ad = satirlar[-1].get("ad") or goster_ad(kimlik)
+        print(renkli(f"── 🖥️ {ad} ({kimlik}) ──", "1;90"))
+        for s in satirlar:
+            im = {"komut": "$", "sonuc": "→", "baslik": "##"}.get(s.get("tur"), " ")
+            print(f"  {renkli(s.get('ts', '')[5:16], '90')} {renkli(im, '36')} {s.get('satir', '')}")
+
+
+def cmd_durum(a):
+    kimlik = coz_kimlik(a.from_) or a.from_
+    d = durum_oku()
+    v = d["kullanicilar"].get(kimlik, {})
+    ad = v.get("ad") or kimlik
+    rol = v.get("rol", "isci")
+    online = bool(v.get("bagli"))
+    pv = panel_kisi(kimlik, a.panel)
+    if pv:
+        ad = pv.get("ad") or ad
+        rol = pv.get("rol") or rol
+        online = bool(pv.get("online"))
+        v = dict(v, bas_denetci=pv.get("bas_denetci"))
+    bd = " 🔍 BAŞ DENETÇİ" if v.get("bas_denetci") else ""
+    okunmamis = [m for m in bana_gelen(ad, kimlik)
+                 if m["ts"] > (v.get("son_okuma") or "")]
+    gb = yukle(GOREV, {"gorevler": []})
+    benim = [g for g in gb["gorevler"] if g.get("assignee") in (kimlik, ad)
+             and g["durum"] in ("assigned", "pending_revision")]
+    print(f"👤 {ad} ({kimlik}) · {v.get('arac', 'diger')} · rol: {ROL_AD.get(rol, rol)}{bd}"
+          f" · panel {'🟢 bağlı' if online else '⚪ çevrimdışı'}"
+          f" · son görülme {(v.get('son_gorulme') or '?')[11:16]}"
+          f" · okunmamış: {len(okunmamis)} · bekleyen görev: {len(benim)}")
+
+
+def cmd_katil(a):
+    cmd_baglan(a)
+
+
+def cmd_kimler(a):
+    ks = durum_oku()["kullanicilar"]
+    if not ks:
+        print("Kimse yok. `yuva baglan <takma-ad> --arac <claude|codex|opencode>`")
+        return
+    pv = panel_veri(a.panel) or {}
+    pks = pv.get("kullanicilar", {})
+    for ad, k in sorted(ks.items(), key=lambda x: (x[1].get("ad") or x[0])):
+        p = pks.get(ad, {})
+        online = bool(p.get("online")) if pks else bool(k.get("bagli"))
+        gorunen = p.get("ad") or k.get("ad") or ad
+        isik = "🟢" if online else "⚪"
+        bd = " 🔍" if (p.get("bas_denetci") or k.get("bas_denetci")) else ""
+        print(f"{isik} {renkli(gorunen, kisi_renk(ad)):20} "
+              f"{ROL_AD.get(k.get('rol'), '?'):8} "
+              f"[{k.get('arac', '?')}] {renkli(ad, '90')} son: {(k.get('son_gorulme') or '?')[11:19]}{bd}")
+
+
+def msaj_satir(m, kimin):
+    kd = kisi_renk(m["kimden"])
+    kime = "" if m["kime"] == "@hepsi" else f" → {m['kime']}"
+    tur = {"soru": "❓", "cevap": "↩", "rapor": "📦", "denetim": "🔍",
+           "gorev": "📋", "durum": "·"}.get(m.get("tur", "not"), "")
+    ad = m.get("ad") or m["kimden"]
+    return (f"{renkli(m['ts'][5:16], '90')} "
+            f"{renkli(ad, kd)}{renkli(kime, '90')} {tur} "
+            f"{m['metin']}")
+
+
+def cmd_yaz(a):
+    hedef = a.to or "@hepsi"
+    ok, cevap = http_iste(a.panel, "/api/yaz", {"kimden": a.from_, "metin": a.metin,
+                                               "kime": hedef, "tur": a.tur})
+    if ok and isinstance(cevap, dict) and cevap.get("ok"):
+        kalp_guven(a.from_, a.panel)
+        return                      # panel yazdı (aynı dosya) → çift kayıt olmasın
+    if ok:
+        sys.exit(f"⚠️ panel reddetti: {(cevap or {}).get('hata')}")
+    mesaj_ekle(a.from_, a.metin, kime=hedef, tur=a.tur)   # panel yoksa yerel
+    kalp_guven(a.from_, a.panel)
+
+
+def cmd_oku(a):
+    ms = mesajlar(a.n)
+    if a.user:
+        u = coz_kimlik(a.user) or a.user
+        ms = [m for m in ms if m["kimden"] in (a.user, u) or m["kime"] in ("@" + a.user, "@" + u)]
+    for m in ms:
+        print(msaj_satir(m, a.from_))
+
+
+def cmd_gelen(a):
+    ad = a.from_
+    kimlik = coz_kimlik(ad) or ad
+    kullanici_dokun(kimlik)
+    d = durum_oku()
+    kisi = d["kullanicilar"].get(kimlik, {})
+    ad = kisi.get("ad") or kimlik
+    rol = kisi.get("rol", "isci")
+    pv = panel_kisi(kimlik, getattr(a, "panel", None))
+    if pv:
+        ad = pv.get("ad") or ad
+        rol = pv.get("rol") or rol
+    # kimlik kartı
+    cmd_durum(argparse.Namespace(from_=kimlik, panel=getattr(a, "panel", None)))
+    # 1) mesajlar
+    ozel = bana_gelen(ad, kimlik) + [
+        m for m in mesajlar(120) if m["kimden"] == "kullanici" and m["kime"] == "@hepsi"]
+    gorulen = {}
+    for m in ozel:
+        gorulen[m["id"]] = m
+    ozel = sorted(gorulen.values(), key=lambda m: m["ts"])
+    print(renkli("── 📬 mesajlar (son 15) ──", "1;90"))
+    for m in ozel[-15:]:
+        print(msaj_satir(m, ad))
+    if not ozel:
+        print("  (boş)")
+    # 2) görevler
+    gb = yukle(GOREV, {"gorevler": []})
+    benim = [g for g in gb["gorevler"] if g.get("assignee") in (kimlik, ad) and
+             g["durum"] in ("assigned", "pending_revision")]
+    print(renkli("── 📋 görevlerin ──", "1;90"))
+    for g in benim:
+        ek = "  ✎ REVIZE GEREKLI!" if g["durum"] == "pending_revision" else ""
+        print(f"  #{g['id']} {g['baslik']}{ek}")
+        for n in g["gecmis"][-3:]:
+            if n["not"]:
+                print(f"      └ {n['kimden']}: {n['not']}")
+    if not benim:
+        print("  (atanan görev yok)")
+    if rol == "goreci":
+        bekleyen = [g for g in gb["gorevler"] if g["durum"] == "pending"]
+        if bekleyen:
+            print(renkli("── ⏳ SEN DAĞITICISIN: atamayı bekleyen görevler ──", "1;33"))
+            for g in bekleyen:
+                print(f"  #{g['id']} {g['baslik']}  (yuva gorev ata {g['id']} <ad>)")
+    if rol == "denetci":
+        kuyruk = [g for g in gb["gorevler"] if g["durum"] == "pending_verification"]
+        if kuyruk:
+            print(renkli("── 🔍 SEN DENETÇİSİN: denetleme kuyruğu ──", "1;33"))
+            for g in kuyruk:
+                print(f"  #{g['id']} {g['baslik']}  (yuva gorev denetle {g['id']} --onayla|--revize)")
+    # okundu işareti
+    d2 = durum_oku()
+    if kimlik in d2["kullanicilar"]:
+        d2["kullanicilar"][kimlik]["son_okuma"] = simdi()
+        kaydet(STATE, d2)
+
+
+def cmd_tahta(a):
+    gb = yukle(GOREV, {"siradaki": 1, "gorevler": []})
+    print(renkli("🪹 GÖREV TAHTASI", "1;36"))
+    for g in gb["gorevler"]:
+        d = DURUM_AD.get(g["durum"], g["durum"])
+        renk = {"verified": "32", "pending_verification": "33",
+                "pending_revision": "31", "assigned": "36",
+                "pending": "90", "dropped": "90"}.get(g["durum"], "0")
+        print(f"  #{g['id']:>3} {renkli(f'{d:9}', renk)} "
+              f"{renkli(g['kimden'], '90')}→{renkli(g.get('assignee') or '-', '90')} "
+              f"{g['baslik']}")
+
+
+def gorev_yukle():
+    return yukle(GOREV, {"siradaki": 1, "gorevler": []})
+
+
+def gorev_bul(gb, gid):
+    for g in gb["gorevler"]:
+        if str(g["id"]) == str(gid):
+            return g
+    return None
+
+
+def gorev_kaydet(gb, g, kimden, olay, not_metni=None):
+    g["guncelleme"] = simdi()
+    olaylar = g.setdefault("gecmis", [])
+    olaylar.append({"ts": simdi(), "kimden": kimden, "olay": olay,
+                    "not": not_metni or ""})
+    kaydet(GOREV, gb)
+    kullanici_dokun(kimden)
+
+
+def cmd_gorev_ekle(a):
+    gb = gorev_yukle()
+    ata = coz_kimlik(a.ata) or a.ata
+    g = {"id": gb["siradaki"], "baslik": a.baslik, "detay": a.detay or "",
+         "kimden": a.from_, "assignee": ata, "durum": "assigned" if ata else "pending",
+         "olusturma": simdi(), "guncelleme": simdi(), "gecmis": []}
+    gb["siradaki"] += 1
+    gb["gorevler"].append(g)
+    gorev_kaydet(gb, g, a.from_, "olusturuldu")
+    mesaj_ekle(a.from_, f"📋 görev #{g['id']}: {a.baslik}"
+               + (f" → @{goster_ad(ata)}" if ata else " (atanmayı bekliyor)"),
+               kime=(ata or "@hepsi"), tur="gorev")
+    print(f"✅ #{g['id']} eklendi")
+
+
+def cmd_gorev_ata(a):
+    gb = gorev_yukle()
+    g = gorev_bul(gb, a.id)
+    if not g:
+        sys.exit(f"Görev #{a.id} yok")
+    kime = coz_kimlik(a.kime) or a.kime
+    g["assignee"] = kime
+    g["durum"] = "assigned"
+    gorev_kaydet(gb, g, a.from_, "atandı", a.not_)
+    mesaj_ekle(a.from_, f"📋 #{g['id']} ({g['baslik']}) sana atandı"
+               + (f" — {a.not_}" if a.not_ else ""), kime=kime, tur="gorev")
+    print(f"✅ #{g['id']} → {goster_ad(kime)}")
+
+
+def cmd_gorev_al(a):
+    gb = gorev_yukle()
+    g = gorev_bul(gb, a.id)
+    if not g:
+        sys.exit(f"Görev #{a.id} yok")
+    if not g.get("assignee"):
+        g["assignee"] = a.from_
+    g["durum"] = "assigned"
+    gorev_kaydet(gb, g, a.from_, "Üstlenildi")
+    mesaj_ekle(a.from_, f"🔨 #{g['id']} ({g['baslik']}) üstlendim, çalışıyorum",
+               kime=g["kimden"], tur="not")
+    print(f"✅ #{g['id']} üstlenildi")
+
+
+def cmd_gorev_teslim(a):
+    gb = gorev_yukle()
+    g = gorev_bul(gb, a.id)
+    if not g:
+        sys.exit(f"Görev #{a.id} yok")
+    g["durum"] = "pending_verification"
+    gorev_kaydet(gb, g, a.from_, "teslim edildi", a.not_)
+    mesaj_ekle(a.from_, f"📦 #{g['id']} ({g['baslik']}) teslim edildi → denetim bekliyor"
+               + (f" — {a.not_}" if a.not_ else ""),
+               kime="@hepsi", tur="rapor")
+    print(f"✅ #{g['id']} teslim edildi, denetçiye kuyruğa girdi")
+
+
+def cmd_gorev_denetle(a):
+    gb = gorev_yukle()
+    g = gorev_bul(gb, a.id)
+    if not g:
+        sys.exit(f"Görev #{a.id} yok")
+    if not a.onayla and not a.revize:
+        sys.exit("--onayla veya --revize belirt")
+    if a.onayla:
+        g["durum"] = "verified"
+        olay, tur, isaret = "onaylandı", "denetim", "✅"
+    else:
+        g["durum"] = "pending_revision"
+        olay, tur, isaret = "revize istendi", "denetim", "✎"
+    gorev_kaydet(gb, g, a.from_, olay, a.not_)
+    mesaj_ekle(a.from_, f"{isaret} #{g['id']} ({g['baslik']}) {olay}"
+               + (f" — {a.not_}" if a.not_ else ""),
+               kime=g.get("assignee") or "@hepsi", tur=tur)
+    print(f"✅ #{g['id']} {olay}")
+
+
+def cmd_gorev_iptal(a):
+    gb = gorev_yukle()
+    g = gorev_bul(gb, a.id)
+    if not g:
+        sys.exit(f"Görev #{a.id} yok")
+    g["durum"] = "dropped"
+    gorev_kaydet(gb, g, a.from_, "iptal edildi", a.not_)
+    print(f"✅ #{g['id']} iptal")
+
+
+def cmd_gorev_liste(a):
+    cmd_tahta(a)
+
+
+def cmd_protokol(bos):
+    print((YUVA / "protokol.md").read_text(encoding="utf-8"))
+
+
+def cmd_panel(a):
+    os.execv(sys.executable, [sys.executable,
+                              str(YUVA / "panel" / "server.py"),
+                              "--port", str(a.port)])
+
+
+# ── ayrıştırıcı ───────────────────────────────────────────────────────
+
+class P(argparse.ArgumentParser):
+    """argparse varsayılan 'required subcommand' davranışını korur."""
+
+
+def main():
+    p = P(prog="yuva", description="🪹 model yuvası")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    s = sub.add_parser("baglan", help="panele bağlan (yeşil ışık + kalp)")
+    s.add_argument("kimlik")
+    s.add_argument("--ad", help="görünen ad (örn. sam)")
+    s.add_argument("--arac", default="diger", choices=list(ARACLAR))
+    s.add_argument("--rol", default="isci", choices=list(ROLLER))
+    s.add_argument("--panel")
+    s.add_argument("--kalp", dest="kalp", action="store_true", default=True)
+    s.add_argument("--kalp-yok", dest="kalp", action="store_false")
+    s.add_argument("--kalp-sn", type=int, default=10)
+    s.add_argument("--kalp-ttl", type=int, default=21600,
+                   help="kalp daemon'ının azami ömrü (sn), 0=sınırsız")
+    s.set_defaults(fn=cmd_baglan)
+
+    s = sub.add_parser("katil", help="yuvaya katıl (=baglan)")
+    s.add_argument("ad")
+    s.add_argument("--arac", default="diger", choices=list(ARACLAR))
+    s.add_argument("--rol", default="isci", choices=list(ROLLER))
+    s.add_argument("--panel")
+    s.add_argument("--kalp", dest="kalp", action="store_true", default=True)
+    s.add_argument("--kalp-yok", dest="kalp", action="store_false")
+    s.add_argument("--kalp-sn", type=int, default=10)
+    s.add_argument("--kalp-ttl", type=int, default=21600)
+    s.set_defaults(fn=cmd_katil)
+
+    s = sub.add_parser("kalp", help="tek seferlik kalp atışı")
+    s.add_argument("--from", dest="from_", required=True)
+    s.add_argument("--panel")
+    s.set_defaults(fn=cmd_kalp)
+
+    s = sub.add_parser("kalp-dongu", help="arka plan kalp döngüsü (daemon)")
+    s.add_argument("--from", dest="from_", required=True)
+    s.add_argument("--pid", type=int, default=0)
+    s.add_argument("--sn", type=int, default=10)
+    s.add_argument("--ttl", type=int, default=21600)
+    s.add_argument("--panel")
+    s.set_defaults(fn=cmd_kalp_dongu)
+
+    s = sub.add_parser("ayril", help="yuvadan ayrıl (ışık söner)")
+    s.add_argument("--from", dest="from_", required=True)
+    s.add_argument("--panel")
+    s.set_defaults(fn=cmd_ayril)
+
+    s = sub.add_parser("ad", help="görünen ad ver/değiştir")
+    s.add_argument("yeni")
+    s.add_argument("--from", dest="from_", required=True)
+    s.add_argument("--panel")
+    s.set_defaults(fn=cmd_ad)
+
+    s = sub.add_parser("ekran", help="model ekranına satır yaz / oku")
+    s.add_argument("satir", nargs="*")
+    s.add_argument("--from", dest="from_")
+    s.add_argument("--tur", default="ekran",
+                   choices=["ekran", "komut", "sonuc", "baslik"])
+    s.add_argument("--n", type=int, default=30)
+    s.add_argument("--panel")
+    s.set_defaults(fn=cmd_ekran)
+
+    s = sub.add_parser("durum", help="kimlik kartın: ad, rol, ışık, sayaçlar")
+    s.add_argument("--from", dest="from_", required=True)
+    s.add_argument("--panel")
+    s.set_defaults(fn=cmd_durum)
+
+    s = sub.add_parser("kimler", help="kim var")
+    s.add_argument("--panel")
+    s.set_defaults(fn=cmd_kimler)
+
+    s = sub.add_parser("yaz", help="yuvaya mesaj yaz")
+    s.add_argument("metin")
+    s.add_argument("--from", dest="from_", required=True)
+    s.add_argument("--to", default="@hepsi")
+    s.add_argument("--tur", default="not",
+                   choices=["not", "soru", "cevap", "rapor", "denetim", "gorev", "durum"])
+    s.add_argument("--panel")
+    s.set_defaults(fn=cmd_yaz)
+
+    s = sub.add_parser("oku", help="son mesajları oku")
+    s.add_argument("--n", type=int, default=20)
+    s.add_argument("--from", dest="from_")
+    s.add_argument("--user")
+    s.set_defaults(fn=cmd_oku)
+
+    s = sub.add_parser("gelen", help="gelen kutun + görevlerin")
+    s.add_argument("--from", dest="from_", required=True)
+    s.add_argument("--panel")
+    s.set_defaults(fn=cmd_gelen)
+
+    s = sub.add_parser("tahta", help="görev tahtası")
+    s.set_defaults(fn=cmd_tahta)
+
+    sg = sub.add_parser("gorev", help="görev işlemleri")
+    gsub = sg.add_subparsers(dest="gop", required=True)
+
+    s = gsub.add_parser("ekle")
+    s.add_argument("baslik")
+    s.add_argument("--detay")
+    s.add_argument("--from", dest="from_", required=True)
+    s.add_argument("--ata")
+    s.set_defaults(fn=cmd_gorev_ekle)
+
+    for ad_, fn_, ekstra in [
+        ("ata", cmd_gorev_ata, ["kime"]),
+        ("al", cmd_gorev_al, []),
+        ("teslim", cmd_gorev_teslim, []),
+        ("denetle", cmd_gorev_denetle, []),
+        ("iptal", cmd_gorev_iptal, []),
+    ]:
+        s = gsub.add_parser(ad_)
+        s.add_argument("id")
+        s.add_argument("--from", dest="from_", required=True)
+        s.add_argument("--not", dest="not_")
+        if ekstra:
+            s.add_argument(ekstra[0])
+        if ad_ == "denetle":
+            s.add_argument("--onayla", action="store_true")
+            s.add_argument("--revize", action="store_true")
+        s.set_defaults(fn=fn_)
+
+    s = sub.add_parser("liste", help="= tahta")
+    s.set_defaults(fn=cmd_gorev_liste)
+
+    sub.add_parser("protokol", help="protokolü göster").set_defaults(fn=cmd_protokol)
+
+    s = sub.add_parser("panel", help="web panelini başlat")
+    s.add_argument("--port", type=int, default=8686)
+    s.set_defaults(fn=cmd_panel)
+
+    a = p.parse_args()
+    # kimlik/ad çözümleme: --from/--to/--ata/--kime hem kimlik hem görünen ad kabul eder
+    for alan in ("from_", "to", "ata", "kime", "user"):
+        deger = getattr(a, alan, None)
+        if isinstance(deger, str) and deger:
+            k = coz_kimlik(deger)
+            if k:
+                setattr(a, alan, k)
+    a.fn(a)
+
+
+if __name__ == "__main__":
+    main()

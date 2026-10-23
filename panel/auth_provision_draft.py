@@ -25,6 +25,7 @@ import os
 import re
 import secrets
 import stat
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -564,9 +565,20 @@ def provision_empty_store_with_receipt(
         _write_receipt(root_fd, request)
         return "created", request
     finally:
+        active_error = sys.exc_info()[1]
+        cleanup_error = None
         if lock_fd >= 0:
             try:
                 fcntl.flock(lock_fd, fcntl.LOCK_UN)
-            finally:
+            except BaseException as error:
+                cleanup_error = error
+            try:
                 os.close(lock_fd)
-        os.close(root_fd)
+            except BaseException as error:
+                cleanup_error = cleanup_error or error
+        try:
+            os.close(root_fd)
+        except BaseException as error:
+            cleanup_error = cleanup_error or error
+        if cleanup_error is not None and active_error is None:
+            raise cleanup_error

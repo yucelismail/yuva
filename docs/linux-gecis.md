@@ -125,41 +125,44 @@ protokolü geliştirilip gerçek süreçlerle doğrulanmalıdır.
 
 ## Geçiş
 
-1. `~/.local/bin/yuva` bağlantısını yeni kaynak ağacının `bin/yuva` dosyasına
+1. Doğrulanmış release'i `<INSTALL_ROOT>/current` işaretçisine alın ve
+   `~/.local/bin/yuva` bağlantısını aynı release'in `bin/yuva` dosyasına
    yöneltin. `YUVA_DIR` ayarlanmamışsa yeni CLI varsayılan olarak `~/yuva`
    kullanır.
 2. Panel servisinin ve CLI oturumlarının aynı `YUVA_DIR` değerini
    kullandığını doğrulayın. Panel bu değeri başlattığı CLI alt süreçlerine de
    aktarır.
-3. Panel servis komutunu yeni kaynak ağacındaki `panel/server.py` dosyasına
-   yöneltin. `--host` loopback adresi olmalı; loopback dışı bind reddedilir.
+3. Panel servis entrypoint'i aynı release içindeki `panel/server.py` olmalı.
+   `--host` loopback adresi olmalı; loopback dışı bind reddedilir.
    Paneli kalıcı user unit ile başlatacaksanız `systemd --user` yöneticisinin
    erişimini hostta doğrulayın. `yuva baglan ... --kalp-yok` roster işlemi için
    bu user manager gerekmez; mevcut heartbeat yolu kapalı olduğu için bu
    sürümde sandbox/host heartbeat network koşulu da uygulanmaz.
    Paneli `systemd --user` ile yönetiyorsanız adaydaki
-   `contrib/systemd/yuva-panel.service` örneğini kurun. Örnek `~/yuva` kod ve
-   veri kökünü varsayar; bu geçişte kod `~/yuva-v2`, mevcut veri kökü ise
-   `~/yuva` olduğundan unit'te `ExecStart` yolunu `%h/yuva-v2/panel/server.py`
-   yapın, `Environment=YUVA_DIR=%h/yuva` değerini koruyun. Başka kökler
-   kullanıyorsanız iki değeri de uygun yollarla değiştirin. Eski panelin
-   durduğunu ve 8686'nın boş olduğunu doğruladıktan sonra:
+   `contrib/systemd/yuva-panel.service` örneğini kurun. Unit kalıcı panel UI/API
+   sunucusunu başlatır; heartbeat worker unit'i değildir. Kod yolu doğrulanmış
+   `<INSTALL_ROOT>/current` release işaretçisine, `YUVA_DIR` ise kurulumdaki
+   mevcut veri köküne (`%h/yuva` varsayılanı) gider. README hızlı başlangıcındaki
+   `YUVA_INSTALL_ROOT` değerini kullanarak örneği aynı release'ten kurun; kod ve
+   veri yollarını birbirine karıştırmayın. Eski panelin durduğunu ve 8686'nın
+   boş olduğunu doğruladıktan sonra:
 
    ```bash
+   YUVA_INSTALL_ROOT="$HOME/.local/opt/yuva"  # Kurulumunuzdaki gerçek kökle aynı olmalı
    mkdir -p ~/.config/systemd/user
-   install -m 0644 ~/yuva-v2/contrib/systemd/yuva-panel.service ~/.config/systemd/user/yuva-panel.service
-   # Kurulan unit'te ExecStart ve gerekirse Environment=YUVA_DIR yollarını düzenleyin.
+   install -m 0644 "$YUVA_INSTALL_ROOT/current/contrib/systemd/yuva-panel.service" ~/.config/systemd/user/yuva-panel.service
    systemctl --user daemon-reload
    systemctl --user enable --now yuva-panel.service
    systemctl --user status yuva-panel.service
    journalctl --user -u yuva-panel.service -f
    ```
 
-   Unit'i güncelledikten sonra `systemctl --user daemon-reload` ve
+   Değiştirilmiş bir unit'i kurduktan sonra `systemctl --user daemon-reload` ve
    `systemctl --user restart yuva-panel.service`; durdurmak için
-   `systemctl --user stop yuva-panel.service` kullanın. Bu panel unit'i
-   heartbeat için geçici unit'inden ayrıdır: bu sürüm heartbeat unit'i
-   oluşturmaz. Panel unit'i `enable` edildiği için user manager başlayınca
+   `systemctl --user stop yuva-panel.service` kullanın. Kaynakta planlanan
+   transient heartbeat adı `yuva-kalp-<hash>.service` biçimindedir; bu worker
+   `yuva-panel.service`'ten ayrıdır, depoda heartbeat unit şablonu yoktur ve
+   mevcut fail-closed gate onu başlatmaz. Panel unit'i `enable` edildiği için user manager başlayınca
    yeniden başlar; logout sonrası çalışması ve reboot'ta manager'ın açılması
    için `loginctl enable-linger "$USER"` gerekir; linger yoksa manager logoutta
    kapanır ve panel durur. Linger etkin değilken panel sonraki kullanıcı oturumu

@@ -7,14 +7,16 @@
 --goreci:#f0883e;--isci:#58a6ff;--denetci:#d2a8ff;--ok:#3fb950;--warn:#d29922;--err:#f85149}
 *{box-sizing:border-box;margin:0}
 body{background:var(--bg);color:var(--fg);font:14px/1.5 ui-monospace,Menlo,Consolas,monospace;
-display:grid;grid-template-rows:auto auto 1fr;height:100vh;overflow:hidden}
+display:grid;grid-template-rows:auto auto auto 1fr;height:100vh;overflow:hidden}
 header{display:flex;gap:12px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--brd);
 background:var(--pnl)}
 header h1{font-size:16px;white-space:nowrap}
 .rozet{font-size:12px;padding:1px 9px;border:1px solid var(--brd);border-radius:10px;color:var(--dim)}
+.presence-host{color:#79c0ff}.presence-principal{color:#3fb950}.presence-unknown{color:#8b949e}
 .rozet b{color:var(--fg)}
 #saat{margin-left:auto;color:var(--dim);font-size:12px}
 #serit{background:#3d1d1d;color:#ffb4ab;font-size:12px;padding:5px 14px;border-bottom:1px solid var(--brd)}
+#snapshot-kapsam{background:#3d3218;color:#ffe0a3;font-size:12px;padding:5px 14px;border-bottom:1px solid var(--brd)}
 .gizli{display:none!important}
 main{display:grid;grid-template-columns:minmax(330px,1fr) minmax(460px,1.35fr);min-height:0;overflow:hidden}
 body.harita-tam main{grid-template-columns:minmax(0,1fr)}
@@ -32,6 +34,8 @@ display:flex;gap:8px;align-items:center}
 .zaman{color:var(--dim);font-size:11px}
 .kimden{font-weight:bold}
 .kime{color:var(--dim);font-size:11px}
+.kaynak-etiketi{display:inline-block;border:1px solid var(--brd);border-radius:999px;
+ padding:1px 6px;color:var(--dim);font-size:10px;line-height:1.5}
 .metin{white-space:pre-wrap;word-break:break-word}
 .msg.ozel{border-left:2px solid var(--brd);padding-left:8px}
 .msg.kullanici{background:var(--pnl2);border:1px solid var(--brd);border-radius:8px;padding:8px 10px}
@@ -311,6 +315,29 @@ border-radius:8px;padding:0 6px;white-space:nowrap}
 .tahta-arsiv-kartlar{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:2px}
 .tahta-arsiv-devam{margin:2px 8px 8px}
 .tahta-bilinmeyen{grid-column:1/-1}
+.gorev-panel{grid-column:1/-1;background:var(--pnl);border:1px solid var(--brd);border-radius:9px;padding:10px}
+.gorev-panel h3{font-size:13px;margin:0 0 8px}
+.gorev-panel p{font-size:11px;color:var(--dim);margin:5px 0}
+.gorev-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:8px;align-items:end}
+.gorev-form-grid label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--dim)}
+.gorev-form-grid input,.gorev-form-grid select,.gorev-form-grid textarea{width:100%;min-width:0}
+.gorev-form-grid textarea{min-height:54px;resize:vertical}
+.gorev-islemler{margin-top:8px;padding-top:7px;border-top:1px solid var(--brd);display:grid;gap:7px}
+.gorev-islemler form{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:6px;align-items:end}
+.gorev-islemler label{display:flex;flex-direction:column;gap:3px;font-size:10px;color:var(--dim)}
+.gorev-islemler input,.gorev-islemler select{width:100%;min-width:0}
+.gorev-islemler button{font-size:11px}
+.gorev-islemler .gorev-kararlar{display:flex;gap:6px;flex-wrap:wrap}
+.gorev-panel button:disabled,.gorev-islemler button:disabled{opacity:.55;cursor:not-allowed}
+.gorev-gecmis{margin-top:6px;padding-top:5px;border-top:1px solid var(--brd);font-size:11px}
+.gorev-gecmis>summary{cursor:pointer;color:var(--dim);padding:3px 0}
+.gorev-gecmis>summary:focus-visible{outline:2px solid #79c0ff;outline-offset:2px;border-radius:3px}
+.gorev-gecmis-olaylar{margin:4px 0 0;padding:0 0 0 18px;display:grid;gap:6px}
+.gorev-gecmis-olay{padding-left:3px;overflow-wrap:anywhere}
+.gorev-gecmis-ust{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.gorev-gecmis-zaman,.gorev-gecmis-meta{color:var(--dim);font-size:10px}
+.gorev-gecmis-not{margin:2px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.gorev-gecmis-bos{margin:6px 0 0;color:var(--dim);font-size:10px}
 .kart{margin:8px;padding:8px;border:1px solid var(--brd);border-radius:7px;background:var(--bg);font-size:13px}
 .kart .id{color:var(--dim)}
 .kart .kim{font-size:11px;color:var(--dim);margin-top:4px}
@@ -337,16 +364,20 @@ border-radius:8px;padding:0 6px;white-space:nowrap}
 .yaz-sol select{width:100%}
 .yaz-sol label{font-size:11px;color:var(--dim);display:flex;gap:4px;align-items:center}
 .ekran-ust{display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;grid-column:1/-1}
-#b-ekran.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+#b-ekran.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));grid-auto-rows:max-content;align-content:start;align-items:start;gap:12px}
+.ekran-ust-baslik{font-size:14px;margin-right:4px}
 .pencere{background:#010409;border:1px solid var(--brd);border-left:3px solid var(--dim);
-border-radius:9px;display:grid;grid-template-rows:auto 1fr;min-height:170px;cursor:zoom-in}
+border-radius:9px;display:grid;grid-template-rows:auto auto;min-width:0;min-height:0;align-self:start;cursor:zoom-in}
 .pencere.online{border-left-color:var(--ok)}
 .p-baslik{display:flex;gap:7px;align-items:center;padding:5px 9px;border-bottom:1px solid var(--brd);
 font-size:12px;background:var(--pnl)}
 .p-baslik .kimlik{color:var(--dim);font-size:11px}
 .p-icerik{margin:0;padding:8px 9px;overflow:auto;font-size:12px;line-height:1.45;
-white-space:pre-wrap;word-break:break-word;max-height:260px}
+white-space:pre-wrap;word-break:break-word;max-height:230px;min-height:0}
 .p-icerik.tam{max-height:none;height:100%}
+.ekran-ozet{padding:7px 9px 0;color:#c9d1d9;font-size:11px;line-height:1.4}
+.ekran-ozet b{color:var(--dim);font-weight:normal;margin-right:5px}
+.ekran-ozet-satir{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
 .satir{display:block}
 .satir .s-zaman{color:var(--dim);font-size:10px;margin-right:5px}
 .satir.komut{color:#7ee787}
@@ -360,16 +391,16 @@ width:min(1100px,95vw);height:min(80vh,900px);display:grid;grid-template-rows:au
 .modal-baslik .kimlik{color:var(--dim);font-size:12px}
 .modal-baslik button{margin-left:auto}
 @media (max-width:900px){
- main{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto}
- #sol,#sag{min-width:0}
+ main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,42%) minmax(0,1fr)}
+ #sol,#sag{min-width:0;min-height:0}
  #sohbet{min-width:0}
  #yazma{min-width:0;grid-template-columns:minmax(0,1fr) auto}
  #yazma .yaz-sol{grid-column:1;grid-row:2}
  #yazma #girdi{grid-column:1/-1;grid-row:1;width:100%;min-width:0}
  #yazma #gonder{grid-column:2;grid-row:2}
- #sol{border-right:0;border-bottom:1px solid var(--brd);max-height:52vh}
+ #sol{border-right:0;border-bottom:1px solid var(--brd);max-height:none}
  #sag{max-height:none}
- .bolum{max-height:60vh}
+ .bolum{max-height:none}
 }
 body.harita-tam .bolum{max-height:none}
 body.harita-tam #sag{height:100%;min-height:0}
@@ -417,11 +448,12 @@ body.harita-tam #b-harita{height:100%;max-height:none;min-height:0}
 </style></head><body>
 <header>
   <h1>🪹 YUVA</h1>
-  <span class="rozet" id="ozet">…</span>
+  <span class="rozet" id="ozet" role="status" aria-live="polite">…</span>
   <span class="rozet" id="ipucu-rozet" title="Modeller terminalden `yuva baglan &lt;ad&gt;` der">⌨️ baglan</span>
   <span id="saat"></span>
 </header>
 <div id="serit" class="gizli"></div>
+<div id="snapshot-kapsam" class="gizli" role="status" aria-live="polite"></div>
 <main>
   <section id="sol">
     <div class="baslik">💬 Ortak Sohbet
@@ -439,16 +471,16 @@ body.harita-tam #b-harita{height:100%;max-height:none;min-height:0}
     </div>
   </section>
   <section id="sag">
-    <nav id="sekmeler">
-      <button class="sekme aktif" data-s="ekip">👥 Ekip</button>
-      <button class="sekme" data-s="tahta">📋 Tahta</button>
-      <button class="sekme" data-s="ekran">🖥️ Ekranlar</button>
-      <button class="sekme" data-s="harita">🗺️ Harita</button>
+    <nav id="sekmeler" aria-label="Panel bölümleri">
+      <button id="sekme-ekip" class="sekme aktif" data-s="ekip" aria-controls="b-ekip" aria-pressed="true">👥 Ekip</button>
+      <button id="sekme-tahta" class="sekme" data-s="tahta" aria-controls="b-tahta" aria-pressed="false">📋 Tahta</button>
+      <button id="sekme-ekran" class="sekme" data-s="ekran" aria-controls="b-ekran" aria-pressed="false">🖥️ Model akışları</button>
+      <button id="sekme-harita" class="sekme" data-s="harita" aria-controls="b-harita" aria-pressed="false">🗺️ Harita</button>
     </nav>
-    <div id="b-ekip" class="bolum"></div>
-    <div id="b-tahta" class="bolum gizli"></div>
-    <div id="b-ekran" class="bolum gizli"></div>
-    <div id="b-harita" class="bolum gizli"></div>
+    <div id="b-ekip" class="bolum" aria-labelledby="sekme-ekip"></div>
+    <div id="b-tahta" class="bolum gizli" aria-labelledby="sekme-tahta"></div>
+    <div id="b-ekran" class="bolum gizli" aria-labelledby="sekme-ekran"></div>
+    <div id="b-harita" class="bolum gizli" aria-labelledby="sekme-harita"></div>
   </section>
 </main>
 <div id="modal" class="gizli">
@@ -480,17 +512,24 @@ haritaLegacyKayitlari:[],haritaLegacyVeri:null,haritaLegacyKs:null,
 haritaDallar:Object.create(null),haritaKisilerAcik:false,
 haritaRenderAnahtari:null,haritaPan:null,haritaPanKlikEngelle:false,haritaSeciliDenetci:null,
 tahtaRenderAnahtari:null,tahtaArsiv:{verified:{acik:false,arama:"",limit:50},dropped:{acik:false,arama:"",limit:50}}};
+S.tahtaGecmisAcik=Object.create(null);
 var ROL_AD={goreci:"görevli",isci:"işçi",denetci:"denetçi"};
 var ROL_RENK={goreci:"#f0883e",isci:"#58a6ff",denetci:"#d2a8ff"};
 var DURUM_AD={pending:"Sırada",assigned:"Atandı",pending_gorevli_review:"Görevli ilk kontrolünde 🔎",
-pending_verification:"Teslim ✋",
+pending_verification:"Yuva’da teslim edildi · inceleme bekliyor",
 verified:"Onaylı ✅",pending_revision:"Revize ✎",dropped:"İptal"};
 var DURUM_SIRA=["pending","assigned","pending_gorevli_review","pending_verification","verified","pending_revision","dropped"];
 var TAHTA_AKTIF=["pending","assigned","pending_gorevli_review","pending_verification","pending_revision"];
 var TAHTA_ARSIV=["verified","dropped"];
+var GOREV_OLAY_GOSTER_AZAMI=5;
 
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+function rolGorunen(rol){
+ if(typeof rol!=="string")return "rol belirtilmemiş";
+ return Object.prototype.hasOwnProperty.call(ROL_AD,rol)?ROL_AD[rol]:rol;
+}
+function revGorunen(rev){return Number.isSafeInteger(rev)&&rev>=0?String(rev):"?";}
 function saat(ts){return String(ts||"").slice(11,16);}
 function goreli(ts){
  if(!ts)return "?";
@@ -501,16 +540,99 @@ function goreli(ts){
  if(sn<86400)return Math.round(sn/3600)+" saat önce";
  return Math.round(sn/86400)+" gün önce";}
 function kimId(k){return "k-"+String(k).replace(/[^A-Za-z0-9]/g,"_");}
-function rolRenk(rol){return ROL_RENK[rol]||"#8b949e";}
+function rolRenk(rol){return typeof rol==="string"&&Object.prototype.hasOwnProperty.call(ROL_RENK,rol)?ROL_RENK[rol]:"#8b949e";}
 function kisi(veri,kimlik){ if(!veri||!veri.kullanicilar)return {}; return veri.kullanicilar[kimlik]||{}; }
 function kisiAd(veri,kimlik){var k=kisi(veri,kimlik);return k.ad||kimlik;}
 function dipte(el,esik){ if(!el)return true; esik=esik||30; return el.scrollTop+el.clientHeight>=el.scrollHeight-esik; }
 
 function serit(metin){var e=document.getElementById("serit");
  if(metin){e.textContent=metin;e.classList.remove("gizli");}else{e.classList.add("gizli");}}
-function onlineMi(v){return !S.hata&&!!(v&&v.online);}
-function onlineEtiketi(v){return S.hata?"⚪ bağlantı doğrulanamıyor":
- (v&&v.online?"🟢 bağlı":"⚪ çevrimdışı");}
+var SNAPSHOT_META_GRUPLAR=["kullanicilar","gorevler","mesajlar","ekran_dosyalari"];
+var SNAPSHOT_META_ETIKETLER={kullanicilar:"kullanıcı",gorevler:"görev",mesajlar:"mesaj",ekran_dosyalari:"ekran dosyası"};
+var SNAPSHOT_META_NEDENLER=["users_output_byte_limit","tasks_output_byte_limit",
+ "messages_output_byte_limit","screen_output_partial","record_size_limit",
+ "record_encoding_error","final_response_byte_limit"];
+function snapshotKapsamUyarisi(veri){
+ var bilinmiyor="⚠️ Snapshot kapsamı doğrulanamıyor; görünen listeler tam kabul edilmemeli.";
+ if(!veri||!Object.prototype.hasOwnProperty.call(veri,"snapshot_meta"))return bilinmiyor;
+ var m=veri.snapshot_meta;
+ if(!m||typeof m!=="object"||Array.isArray(m)||m.schema_version!==1||
+  typeof m.partial!=="boolean"||!Number.isSafeInteger(m.response_byte_budget)||m.response_byte_budget<1||
+  !m.included||typeof m.included!=="object"||Array.isArray(m.included)||
+  !m.omitted||typeof m.omitted!=="object"||Array.isArray(m.omitted)||
+  !Array.isArray(m.partial_reasons))return bilinmiyor;
+ var beklenenAnahtarlar=SNAPSHOT_META_GRUPLAR.slice().sort().join("|");
+ if(Object.keys(m.included).sort().join("|")!==beklenenAnahtarlar||
+  Object.keys(m.omitted).sort().join("|")!==beklenenAnahtarlar)return bilinmiyor;
+ var atlanan=0;
+ for(var i=0;i<SNAPSHOT_META_GRUPLAR.length;i++){
+  var grup=SNAPSHOT_META_GRUPLAR[i], inc=m.included[grup], omit=m.omitted[grup];
+  if(!Number.isSafeInteger(inc)||inc<0||!Number.isSafeInteger(omit)||omit<0)return bilinmiyor;
+  atlanan+=omit;
+ }
+ if(!Number.isSafeInteger(atlanan)||new Set(m.partial_reasons).size!==m.partial_reasons.length||
+  m.partial_reasons.some(function(n){
+  return typeof n!=="string"||SNAPSHOT_META_NEDENLER.indexOf(n)<0;
+ }))return bilinmiyor;
+ if((!m.partial&&(atlanan!==0||m.partial_reasons.length!==0))||
+  (m.partial&&m.partial_reasons.length===0)||
+  (m.partial&&atlanan===0&&m.partial_reasons.indexOf("screen_output_partial")<0)||
+  (veri.ekranlar_meta&&veri.ekranlar_meta.partial===true&&
+   (!m.partial||m.partial_reasons.indexOf("screen_output_partial")<0)))return bilinmiyor;
+ var gorunen={
+  kullanicilar:Object.keys(veri.kullanicilar||{}).length,
+  gorevler:Array.isArray(veri.gorevler)?veri.gorevler.length:-1,
+  mesajlar:Array.isArray(veri.mesajlar)?veri.mesajlar.length:-1,
+  ekran_dosyalari:Object.keys(veri.ekranlar||{}).length
+ };
+ if(SNAPSHOT_META_GRUPLAR.some(function(grup){return gorunen[grup]!==m.included[grup];}))return bilinmiyor;
+ if(!m.partial)return "";
+ var parcalar=[];
+ SNAPSHOT_META_GRUPLAR.forEach(function(grup){
+  var adet=m.omitted[grup];
+  if(adet)parcalar.push(SNAPSHOT_META_ETIKETLER[grup]+" "+adet+" kayıt");
+ });
+ if(m.partial_reasons.indexOf("screen_output_partial")>=0&&
+  !m.omitted.ekran_dosyalari)parcalar.push("ekran kaynağının bir bölümü");
+ return "⚠️ Snapshot kısmi. Gösterilmeyen: "+parcalar.join(", ")+
+  ". Görünen listeler eksik olabilir; boş liste veri olmadığı anlamına gelmez.";
+}
+function snapshotKapsamCiz(veri){
+ var el=document.getElementById("snapshot-kapsam"), uyari=snapshotKapsamUyarisi(veri);
+ if(S.hata&&uyari)uyari="Eski snapshot · "+uyari;
+ if(uyari){el.textContent=uyari;el.classList.remove("gizli");}
+ else{el.textContent="";el.classList.add("gizli");}
+}
+function onlineMi(v){
+ if(S.hata||!v||typeof v!=="object"||v.online!==true||
+  v.presence_verified!==true||v.presence_state!=="online")return false;
+ var ttl=S.veri&&S.veri.online_sn, kalp=Date.parse(
+  typeof v.son_kalp==="string"?v.son_kalp:"");
+ if(typeof ttl!=="number"||!isFinite(ttl)||Math.floor(ttl)!==ttl||
+  ttl<1||ttl>300||!isFinite(kalp))return false;
+ var yas=Date.now()-kalp;
+ return yas>=0&&yas<=ttl*1000;
+}
+function hostOnlineMi(v){
+ if(S.hata||!v||typeof v!=="object")return false;
+ var host=v.host_presence;
+ if(!host||typeof host!=="object"||Array.isArray(host)||host.state!=="online"||
+  typeof host.observed_at!=="string")return false;
+ var ttl=S.veri&&S.veri.online_sn, observed=Date.parse(host.observed_at);
+ if(typeof ttl!=="number"||!Number.isSafeInteger(ttl)||ttl<1||ttl>300||!isFinite(observed))return false;
+ var age=Date.now()-observed;
+ return age>=0&&age<=ttl*1000;
+}
+function presenceOffline(v){
+ // Snapshot API has no offline evidence timestamp/source/freshness contract yet.
+ // Keep every non-online state unknown until that evidence is part of the API.
+ return false;
+}
+function presenceBilinmiyor(v){return !onlineMi(v)&&!presenceOffline(v);}
+function onlineEtiketi(v){return S.hata?"⚪ Yuva presence · panel bağlantısı doğrulanamıyor":
+ (onlineMi(v)?"🟢 Principal doğrulandı · çevrimiçi":hostOnlineMi(v)?
+  "🔵 Host etkin · kullanıcı kimliği doğrulanmadı":presenceBilinmiyor(v)?
+  "⚪ Yuva presence · durumu doğrulanamıyor":"⚪ Yuva presence · çevrimdışı");}
 
 var cekSira=0;
 async function cek(){
@@ -543,6 +665,8 @@ function ciz(){
   sekmeEtiket(null);
   document.getElementById("b-ekip").innerHTML=
    '<div class="empty">⚠️ Panel verisine ulaşılamıyor; ekip listesi henüz yüklenemedi.</div>';
+  document.getElementById("b-tahta").innerHTML=
+   '<div class="gorev-panel" role="status"><h3>Görev tahtası yüklenemedi</h3><p>Panel bağlantısı kurulunca yeniden denenecek; görev olmadığı çıkarımı yapılamaz.</p></div>';
   document.getElementById("b-ekran").innerHTML=
    '<div class="empty">⚠️ Panel verisine ulaşılamıyor; ekran ve bağlantı durumu doğrulanamıyor.</div>';
   document.getElementById("b-harita").innerHTML=
@@ -551,30 +675,53 @@ function ciz(){
   document.getElementById("bekleyen").classList.add("gizli");
   return;
  }
+ snapshotKapsamCiz(veri);
  var ks=veri.kullanicilar||{};
  var kimlikler=Object.keys(ks);
  var online=S.hata?null:kimlikler.filter(function(k){return onlineMi(ks[k]);});
+ var gorunenKimlikler=S.hata?kimlikler:kimlikler.filter(function(k){return onlineMi(ks[k]);});
+ var cevrimdisiSayisi=0,bilinmeyenSayisi=0,hostEtkinSayisi=0;
+ if(!S.hata)kimlikler.forEach(function(k){
+  if(presenceOffline(ks[k]))cevrimdisiSayisi++;else if(!onlineMi(ks[k])){
+   bilinmeyenSayisi++;if(hostOnlineMi(ks[k]))hostEtkinSayisi++;
+  }
+ });
  document.getElementById("ozet").innerHTML=S.hata?
-  "<b>—/"+kimlikler.length+"</b> kayıt · çevrimiçi durumu doğrulanamıyor · "+
-   (veri.mesajlar||[]).length+" mesaj · rev "+(veri.rev||0):
-  "<b>"+online.length+"/"+kimlikler.length+
-   "</b> model 🟢 · "+(veri.mesajlar||[]).length+" mesaj · rev "+(veri.rev||0);
+  "<b>—/"+kimlikler.length+"</b> kayıt · Yuva presence doğrulanamıyor · "+
+   (veri.mesajlar||[]).length+" mesaj · rev "+esc(revGorunen(veri.rev)):
+  presenceOzetMetni(online.length,cevrimdisiSayisi,bilinmeyenSayisi,kimlikler.length)+
+   (hostEtkinSayisi?" · "+hostEtkinSayisi+" host etkin, kullanıcı kimliği doğrulanmadı":"")+
+   " · "+(veri.mesajlar||[]).length+" mesaj · rev "+esc(revGorunen(veri.rev));
  hedefCiz(kimlikler,ks);
  sohbetCiz(veri);
  sohbetDurum(veri);
- sekmeEtiket(online);
+ sekmeEtiket(online,bilinmeyenSayisi,kimlikler.length,hostEtkinSayisi);
  ekipCiz(veri,ks,kimlikler);
  tahtaCiz(veri);
- ekranCiz(veri,ks,kimlikler);
- haritaCiz(veri,ks,kimlikler);
+ ekranCiz(veri,ks,gorunenKimlikler);
+ haritaCiz(veri,ks,gorunenKimlikler);
  modalCiz(veri,ks);
 }
 
-function sekmeEtiket(online){
+function presenceOzetMetni(online,offline,unknown,total){
+ if(!total)return "<b>Yuva presence: kayıtlı model yok</b>";
+ var metin=online?"<b>Yuva presence: "+online+" doğrulanmış çevrimiçi</b> 🟢":
+  (unknown?"<b>Yuva presence: çevrimiçi sayısı doğrulanamıyor</b>":
+   "<b>Yuva presence: 0 doğrulanmış çevrimiçi</b>");
+ if(offline)metin+=" · "+offline+" doğrulanmış çevrimdışı";
+ if(unknown)metin+=" · "+unknown+" durum doğrulanamıyor";
+ return metin;
+}
+
+function sekmeEtiket(online,unknown,total,hostActive){
  var e=document.querySelector('.sekme[data-s="ekip"]');
  if(!e)return;
- e.textContent=online===null?"👥 Ekip · doğrulanamıyor":
-  "👥 Ekip"+(online.length?" · "+online.length+"🟢":"");
+ e.textContent=online===null?"👥 Ekip · Yuva presence doğrulanamıyor":
+  (!total?"👥 Ekip · kayıt yok":
+   (!online.length&&unknown?"👥 Ekip · Yuva presence bilinmiyor":
+    "👥 Ekip · "+online.length+" doğrulanmış çevrimiçi"+(unknown?" · "+unknown+" bilinmiyor":"")+
+     (hostActive?" · "+hostActive+" host etkin, kimlik doğrulanmadı":"")+
+     (online.length?" 🟢":"")));
 }
 
 function hedefCiz(kimlikler,ks){
@@ -585,7 +732,7 @@ function hedefCiz(kimlikler,ks){
   var v=ks[k]; if(!S.hata&&!onlineMi(v))return;
   var hedef=S.hata&&(eski==="@"+k||eski==="@"+(v.ad||k))?eski:"@"+(v.ad||k);
   html+='<option value="'+esc(hedef)+'">'+(S.hata?"⚪ ":"🟢 ")+"@"+
-   esc(v.ad||k)+(S.hata?" · durum doğrulanamıyor":" · "+(ROL_AD[v.rol]||v.rol))+"</option>";
+   esc(v.ad||k)+(S.hata?" · durum doğrulanamıyor":" · "+esc(rolGorunen(v.rol)))+"</option>";
  });
  if(S.hata&&eski!=="@hepsi"&& !kimlikler.some(function(k){
   var v=ks[k]||{};return eski==="@"+(v.ad||k)||eski==="@"+k;
@@ -622,7 +769,8 @@ function sohbetCiz(veri){
      esc(kul?"SEN (kullanıcı)":ad)+"</span>"+
    (m.kime&&m.kime!=="@hepsi"&&!kul?'<span class="kime">→ '+esc(m.kime)+"</span>":"")+
    '<span class="kime">'+((m.tur&&m.tur!=="not"&&m.tur!=="durum")?esc(m.tur):"")+"</span>";
-  html+='<div class="'+cls+(ardil?" ardil":"")+'"><div class="satir1">'+ust+"</div>"+
+  html+='<div class="'+cls+(ardil?" ardil":"")+'"><div class="satir1">'+ust+
+   mesajKaynakEtiketi(m)+"</div>"+
    '<div class="metin">'+esc(m.metin)+"</div>"+
    (kul||(m.kime&&m.kime!=="@hepsi")?okumaSatiri(m,veri):"")+"</div>";
  });
@@ -631,6 +779,25 @@ function sohbetCiz(veri){
  if(dipteydi){el.scrollTop=el.scrollHeight;S.yeni=0;}else if(yeniSayi>0){S.yeni=yeniSayi;}
  S.sonId=ms.length?ms[ms.length-1].id:S.sonId;
  bekleyenCiz(veri);
+}
+
+// Provenance badges use only server snapshot metadata, never the message body.
+// A source class is a source label; it does not grant task or instruction authority.
+function mesajKaynakEtiketi(m){
+ var sinif=m&&typeof m.source_class==="string"?m.source_class:"unknown";
+ var guven=m&&m.source_class_trust;
+ var metadataGecerli=(sinif==="operator"||sinif==="agent"||sinif==="unknown")&&
+  (guven==="verified"||guven==="unverified");
+ var etiket="Kaynak doğrulanmadı";
+ if(metadataGecerli&&sinif==="operator"){
+  etiket=guven==="verified"?
+   "Operatör kaynağı doğrulandı · talimat yetkisi değildir":
+   "Operatör iddiası · kaynak doğrulanmadı";
+ }else if(metadataGecerli&&sinif==="agent"){
+  etiket=guven==="verified"?"Ajan kaynağı doğrulandı":"Ajan kaynağı iddiası · doğrulanmadı";
+ }
+ return '<span class="kaynak-etiketi" role="note" aria-label="'+esc(etiket)+'">'+
+  esc(etiket)+"</span>";
 }
 
 // hedef kitlesi: mesajı alması gereken kimlikler
@@ -643,86 +810,90 @@ function hedefKisiler(m,veri){
  });
  return out;
 }
-function okuduMu(v,m){return !!(v&&v.son_okuma&&String(m.ts)<=String(v.son_okuma));}
+function sonOkumaKapsar(v,m){return !!(v&&v.son_okuma&&String(m.ts)<=String(v.son_okuma));}
 
-// mesaj başına: kim okudu / kim okumadı
+// Mesaj zamanı için Yuva son_okuma eşiğinin kapsamını gösterir; agent receipt'i değildir.
 function okumaSatiri(m,veri){
  if(m.tur==="durum")return "";
- if(S.hata)return '<div class="okuma"><span>⚪ çevrimiçi durumu doğrulanamıyor</span></div>';
  var hedef=hedefKisiler(m,veri);
  if(!hedef.length)return "";
- var okuyan=[],bekleyen=[],uykuda=[];
+ if(S.hata)return '<div class="okuma"><span>⚪ Eski Yuva snapshot’ı · panel bağlantı hatası · son_okuma kapsamı doğrulanamıyor</span></div>';
+ var kapsayan=0,kapsamayan=0,hatirlatilabilir=0;
  hedef.forEach(function(k){
-  var v=veri.kullanicilar[k];
-  if(okuduMu(v,m))okuyan.push(v.ad||k);
-  else if(onlineMi(v))bekleyen.push(v.ad||k);
-  else uykuda.push(v.ad||k);
+  var v=(veri.kullanicilar||{})[k]||{};
+  if(sonOkumaKapsar(v,m))kapsayan++;
+  else{ kapsamayan++;if(onlineMi(v))hatirlatilabilir++; }
  });
- var b="";
- if(okuyan.length)b+='<span class="ok" title="'+esc(okuyan.join(", "))+
-  '">👁 '+okuyan.length+"/"+hedef.length+" okudu</span>";
- else b+='<span>📥 '+hedef.length+" modele iletildi — henüz okuyan yok</span>";
- if(bekleyen.length){
-  b+='<span class="bek" title="'+esc(bekleyen.join(", "))+
-   '">⏳ '+bekleyen.length+" çevrimiçi okumadı</span>";
-  b+='<button data-durt="'+esc(m.id)+'" title="okumayan çevrimiçi modellere hatırlatma gönder">🔔 dürt</button>';
+ var b='<span class="ok">Yuva son_okuma eşiği: '+kapsayan+"/"+hedef.length+
+  " hedefte bu mesaj zamanını kapsıyor; agent receipt doğrulanmadı.</span>";
+ if(kapsamayan){
+  b+='<span class="bek">'+kapsamayan+" hedefte eşik bu mesaj zamanını kapsamıyor; okuma durumu bilinmiyor.</span>";
+  if(hatirlatilabilir)b+='<button data-durt="'+esc(m.id)+'" title="Yuva sohbetine kapsamı açıklayan hatırlatma kaydı ekle">🔔 sohbet hatırlatması kaydet</button>';
  }
- if(uykuda.length)b+='<span title="'+esc(uykuda.join(", "))+
-  '">💤 '+uykuda.length+" çevrimdışı</span>";
  return '<div class="okuma">'+b+"</div>";
 }
 
-// üstteki "bekleyen mesaj" şeridi
+// üstteki son_okuma kapsamı şeridi
 function bekleyenCiz(veri){
  var el=document.getElementById("bekleyen");
  if(S.hata){
   el.classList.remove("gizli");
-  el.innerHTML="⚪ Çevrimiçi/çevrimdışı durumu doğrulanamıyor; eski bağlantı verisine göre sayı veya hatırlatma hedefi gösterilmiyor.";
+  el.innerHTML="⚪ Eski Yuva snapshot’ı · panel bağlantı hatası · son_okuma ve mesaj kapsamı doğrulanamıyor; agent receipt doğrulanmadı.";
   return;
  }
  var ms=(veri.mesajlar||[]).filter(function(m){return m.kimden==="kullanici";}).slice(-40);
- var onlineK={},offlineK={},mesajlar={};
+ var onlineK={},offlineK={},bilinmiyorK={},mesajlar={},hedefler={};
  ms.forEach(function(m){
   if(m.tur==="durum")return;
   hedefKisiler(m,veri).forEach(function(k){
    var v=veri.kullanicilar[k];
-   if(okuduMu(v,m))return;
+   if(sonOkumaKapsar(v,m))return;
    mesajlar[m.id]=1;
-   if(onlineMi(v))onlineK[v.ad||k]=1;else offlineK[v.ad||k]=1;
+   hedefler[k]=v.ad||k;
+   if(onlineMi(v))onlineK[v.ad||k]=1;
+   else if(presenceOffline(v))offlineK[v.ad||k]=1;
+   else bilinmiyorK[v.ad||k]=1;
   });
  });
- var n=Object.keys(onlineK).length,m2=Object.keys(offlineK).length;
- if(!n&&!m2){el.classList.add("gizli");el.innerHTML="";return;}
+ var n=Object.keys(onlineK).length,m2=Object.keys(offlineK).length,m3=Object.keys(bilinmiyorK).length;
+ if(!n&&!m2&&!m3){el.classList.add("gizli");el.innerHTML="";return;}
  el.classList.remove("gizli");
- var t="📬 ";
- t+=n?"<b>"+n+"</b> çevrimiçi modelin okumadığı <b>"+Object.keys(mesajlar).length+"</b> mesaj var: "+
-   esc(Object.keys(onlineK).join(", "))
-  :"okumayan çevrimiçi model yok ("+m2+" çevrimdışı model oturumu açınca görecek)";
- t+= n&&m2?" (+"+m2+" çevrimdışı)":"";
- if(n)t+=' <button id="durt-hepsi">🔔 hepsini dürt</button>';
- t+='<span class="ipucu">· modeller `yuva gelen` dediğinde okundu işaretlenir</span>';
+ var t="📬 Son 40 Yuva mesajında son_okuma eşiği <b>"+Object.keys(mesajlar).length+
+  "</b> mesajın zamanını en az bir hedefte kapsamıyor; eşik dışı hedef: "+
+  esc(Object.keys(hedefler).join(", "))+".";
+ if(n)t+=" Yuva presence çevrimiçi görünen hedef: "+n;
+ if(m2)t+=" · doğrulanmış çevrimdışı presence: "+m2;
+ if(m3)t+=" · presence durumu doğrulanamayan hedef: "+m3;
+ t+=" Agent receipt doğrulanmadı.";
+ if(n)t+=' <button id="durt-hepsi">🔔 sohbet hatırlatması kaydet</button>';
+ t+='<span class="ipucu">· `yuva gelen` son 15 mesajı gösterir; daha eski mesajlar da son_okuma eşiğine girebilir, ancak bu onların görüntülendiğini kanıtlamaz. Agent receipt doğrulanmadı.</span>';
  el.innerHTML=t;
 }
 
 function sohbetDurum(veri){
  var el=document.getElementById("sohbet-durum");
  if(!el)return;
- var okunmamis={},n=0;
+ if(S.hata){el.textContent="⚪ Eski Yuva snapshot’ı · panel bağlantı hatası · son_okuma kapsamı doğrulanamıyor.";return;}
+ var kapsanmayan={},n=0;
  (veri.mesajlar||[]).filter(function(m){return m.kimden==="kullanici"&&m.tur!=="durum";})
   .slice(-40).forEach(function(m){
    hedefKisiler(m,veri).forEach(function(k){
-    if(!okuduMu(veri.kullanicilar[k],m)){okunmamis[m.id]=1;n++;}});
+    if(!sonOkumaKapsar(veri.kullanicilar[k],m)){kapsanmayan[m.id]=1;n++;}});
   });
- el.textContent=n?("📬 "+Object.keys(okunmamis).length+" okunmamış mesaj"):"";
+ el.textContent=n?("📬 Son 40 Yuva mesajından "+Object.keys(kapsanmayan).length+
+  " mesajda en az bir hedef için son_okuma eşiği mesaj zamanını kapsamıyor; agent receipt doğrulanmıyor."):"";
 }
 
 function modelKart(k,v,veri){
- var on=onlineMi(v), durum=onlineEtiketi(v), renk=rolRenk(v.rol);
- var okunmamis=0;
+ var on=onlineMi(v), host=hostOnlineMi(v), durum=onlineEtiketi(v), renk=rolRenk(v.rol);
+ var kapsamDisi=0,ilgiliMesajVar=false;
  (veri.mesajlar||[]).slice(-60).forEach(function(m){
   if(m.kimden===k||m.tur==="durum")return;
   var benim=(m.kimden==="kullanici"&&m.kime==="@hepsi")||m.kime==="@"+(v.ad||k)||m.kime==="@"+k;
-  if(benim&&!okuduMu(v,m))okunmamis++;
+  if(benim){
+   ilgiliMesajVar=true;
+   if(!S.hata&&!sonOkumaKapsar(v,m))kapsamDisi++;
+  }
  });
  var html='<div class="model'+(on?" online":"")+'" style="border-left-color:'+(on?"#3fb950":renk)+'">';
  html+='<div class="m-ust"><span class="isik" title="'+durum+
@@ -731,14 +902,17 @@ function modelKart(k,v,veri){
   html+='<input class="ad-giris" id="ad-giris" value="'+esc(S.duzenleDeger)+
    '" placeholder="ad (örn. sam) — Enter: kaydet, ESC: vazgeç">';
  }else{
-  html+='<span class="m-ad rol-'+esc(v.rol)+'">'+esc(v.ad||k)+"</span>";
+  html+='<span class="m-ad rol-'+esc(typeof v.rol==="string"?v.rol:"bilinmeyen")+'">'+esc(v.ad||k)+"</span>";
   if(v.bas_denetci)html+='<span class="rozet-bd">🔍 BAŞ DENETÇİ</span>';
-  if(okunmamis&&on)html+='<span class="rozet-say bekle" title="bu modelin henüz okumadığı mesaj">📬 '+okunmamis+"</span>";
+  if(S.hata&&ilgiliMesajVar)html+='<span class="rozet-say bekle" title="Eski Yuva snapshot’ı; son_okuma kapsamı doğrulanamıyor; agent receipt doğrulanmadı">📬 ?</span>';
+  else if(kapsamDisi)html+='<span class="rozet-say bekle" title="Yuva son_okuma eşiği bu mesaj zamanlarını kapsamıyor; agent receipt doğrulanmadı">📬 '+kapsamDisi+" eşik dışı</span>";
   html+='<button class="mini" data-ad-ver="'+esc(k)+'" title="bu modele isim ver">✏️</button>';
  }
  html+="</div>";
- html+='<div class="m-alt">'+esc(k)+" · "+esc(v.arac)+" · "+(ROL_AD[v.rol]||v.rol)+
-  " · "+durum+" · "+esc(goreli(v.son_gorulme))+"</div>";
+ var presenceClass=on?"presence-principal":host?"presence-host":"presence-unknown";
+ html+='<div class="m-alt">'+esc(k)+" · "+esc(v.arac)+" · "+esc(rolGorunen(v.rol))+
+  ' · <span class="'+presenceClass+'">'+esc(durum)+"</span> · "+
+  esc(goreli(v.son_gorulme))+"</div>";
  if(S.duzenle!==k){
   html+='<div class="m-rol"><select data-rol="'+esc(k)+'" title="görev ataması">';
   ["goreci","isci","denetci"].forEach(function(r){
@@ -777,32 +951,139 @@ function ekipCiz(veri,ks,kimlikler){
   var stale='<div class="empty">'+(kimlikler.length?
    "⚪ Bağlantı durumu doğrulanamıyor. Kartlar son alınan panel verisinden gösteriliyor.":
    "⚠️ Panel verisi alınamadı; ekip durumu yüklenemedi.")+"</div>";
-  stale+=sirala(kimlikler).map(function(k){return modelKart(k,ks[k],veri);}).join("");
+  if(kimlikler.length){
+   stale+='<div class="katlanmis"><span>⚪ '+kimlikler.length+" durum doğrulanamıyor"+
+    (S.cevrimdisi?"":" (gizli)")+'</span><button class="mini" id="cd-ac">'+
+    (S.cevrimdisi?"▲ gizle":"▼ göster")+"</button></div>";
+   if(S.cevrimdisi)stale+='<div class="empty">⚪ Durumu doğrulanamıyor (son alınan kayıt)</div>'+
+    sirala(kimlikler).map(function(k){return modelKart(k,ks[k],veri);}).join("");
+  }
   el.innerHTML=stale;
   editGeriYukle();
   return;
  }
  if(!kimlikler.length){
-  el.innerHTML='<div class="empty">henüz model yok. Terminalde:<br>'+
-   '<code>yuva baglan codex-1 --ad sam --arac codex --rol denetci</code></div>';
+  el.innerHTML='<div class="empty">Yuva’da kayıtlı model yok.</div>';
   return;
  }
- var online=[],offline=[];
- kimlikler.forEach(function(k){(onlineMi(ks[k])?online:offline).push(k);});
+ var online=[],offline=[],unknown=[];
+ kimlikler.forEach(function(k){
+  if(onlineMi(ks[k]))online.push(k);
+  else if(presenceOffline(ks[k]))offline.push(k);
+  else unknown.push(k);
+ });
  var html="";
  if(!online.length){
-  html+='<div class="empty">🟢 şu an bağlı model yok.<br>Bir model terminalde '+
-   "<code>yuva baglan &lt;ad&gt;</code> dediğinde buraya kartı düşer.</div>";
+  var presenceMetni=unknown.length?
+   "⚪ Yuva presence doğrulanamıyor; çevrimiçi sayısı bilinmiyor · "+unknown.length+" durum doğrulanamıyor":
+   "⚪ 0 doğrulanmış çevrimiçi"+(offline.length?" · "+offline.length+" doğrulanmış çevrimdışı":"");
+  html+='<div class="empty" role="status" aria-live="polite">'+esc(presenceMetni)+"</div>";
  }
  html+=sirala(online).map(function(k){return modelKart(k,ks[k],veri);}).join("");
- if(offline.length){
-  html+='<div class="katlanmis"><span>⚪ '+offline.length+" çevrimdışı model"+
+ if(offline.length||unknown.length){
+  var gizliDurumlar=[];
+  if(offline.length)gizliDurumlar.push(offline.length+" doğrulanmış çevrimdışı");
+  if(unknown.length)gizliDurumlar.push(unknown.length+" durum doğrulanamıyor");
+  html+='<div class="katlanmis"><span>⚪ '+gizliDurumlar.join(" · ")+
    (S.cevrimdisi?"":" (gizli)")+'</span><button class="mini" id="cd-ac">'+
    (S.cevrimdisi?"▲ gizle":"▼ göster")+"</button></div>";
-  if(S.cevrimdisi)html+=sirala(offline).map(function(k){return modelKart(k,ks[k],veri);}).join("");
+  if(S.cevrimdisi){
+   if(offline.length)html+='<div class="empty">⚪ Doğrulanmış çevrimdışı</div>'+
+    sirala(offline).map(function(k){return modelKart(k,ks[k],veri);}).join("");
+   if(unknown.length)html+='<div class="empty">⚪ Durumu doğrulanamıyor</div>'+
+    sirala(unknown).map(function(k){return modelKart(k,ks[k],veri);}).join("");
+  }
  }
  el.innerHTML=html;
  editGeriYukle();
+}
+
+function gorevKisileri(veri,roller,basDenetciOlabilir){
+ var ks=veri.kullanicilar||{};
+ return Object.keys(ks).filter(function(k){
+  return roller.indexOf(ks[k].rol)>=0||
+   (basDenetciOlabilir&&ks[k].bas_denetci===true);
+ }).sort(function(a,b){return kisiAd(veri,a).localeCompare(kisiAd(veri,b),"tr");});
+}
+
+function gorevKisiSec(veri,ad,roller,secili,istegeBagli,basDenetciOlabilir,adaylar){
+ var kimlikler=adaylar||gorevKisileri(veri,roller,basDenetciOlabilir),html='<select name="'+ad+'"'+
+  (istegeBagli?"":" required")+'>';
+ html+='<option value="">'+(istegeBagli?"Atama yok":"Kimlik seçin")+'</option>';
+ kimlikler.forEach(function(k){
+  html+='<option value="'+esc(k)+'"'+(k===secili?" selected":"")+'>'+esc(kisiAd(veri,k))+" · "+esc(k)+"</option>";
+ });
+ return html+"</select>";
+}
+
+function gorevFormKisi(veri,ad,etiket,roller,secili,istegeBagli,basDenetciOlabilir,adaylar){
+ return '<label>'+etiket+gorevKisiSec(veri,ad,roller,secili,istegeBagli,basDenetciOlabilir,adaylar)+"</label>";
+}
+
+function gorevEklePaneli(veri){
+ var acanlar=gorevKisileri(veri,["denetci"],true), isciSayisi=gorevKisileri(veri,["isci"],false).length;
+ var kapali=S.hata||!acanlar.length;
+ var html='<section class="gorev-panel" aria-labelledby="gorev-ekle-baslik"><h3 id="gorev-ekle-baslik">Elle görev yönetimi</h3>'+
+  '<p>Görev ekleme, atama, teslim ve inceleme Yuva kaydını değiştirir; otomatik iş başlatmaz. Kimlik seçimi oturum doğrulaması değildir.</p>';
+ if(S.hata)html+='<p role="status">Panel bağlantısı yok; eski snapshot üzerinden görev işlemleri kapalı.</p>';
+ else if(!acanlar.length)html+='<p role="status">Görev açabilecek kayıtlı denetçi/baş denetçi yok. Önce Yuva’da uygun rol kaydı oluşturun.</p>';
+ else if(!isciSayisi)html+='<p role="status">Atama için kayıtlı işçi yok; isterseniz görevi atanmadan sıraya ekleyin.</p>';
+ html+='<form id="gorev-ekle-formu" data-task-op="ekle"><div class="gorev-form-grid">'+
+  '<label>Görev başlığı<input name="baslik" maxlength="240" required placeholder="Yapılacak işi kısa yazın"></label>'+
+  '<label>Detay<textarea name="detay" maxlength="12000" placeholder="İsteğe bağlı kapsam ve kabul ölçütü"></textarea></label>'+
+  '<label>Görevi açan · yerel kimlik'+gorevKisiSec(veri,"kimden",["denetci"],acanlar[0],false,true)+"</label>"+
+  '<label>İşçi ataması (isteğe bağlı)'+gorevKisiSec(veri,"ata",["isci"],"",true,false)+"</label>"+
+  '<label>İlk kontrol görevlisi (isteğe bağlı)'+gorevKisiSec(veri,"gorevli",["goreci"],"",true,false)+"</label>"+
+  '<button type="submit"'+(kapali?" disabled":"")+'>Görevi ekle</button></div></form>'+
+  '<p>Bu form kullanıcı oturumunu doğrulamaz. Auth açıkken API yetkili isteği reddedebilir.</p></section>';
+ return html;
+}
+
+function gorevAksiyonFormu(g,veri,op,etiket,roller,secili,alanlar,basDenetciOlabilir,adaylar){
+ var html='<form data-task-op="'+op+'"><input type="hidden" name="id" value="'+esc(g.id)+'">'+
+  gorevFormKisi(veri,"kimden","İşlemi yapan · yerel kimlik",roller,secili,false,basDenetciOlabilir,adaylar);
+ if(alanlar)html+=alanlar;
+ return html+(etiket?'<button type="submit">'+etiket+'</button>':"")+"</form>";
+}
+
+function gorevKartAksiyonlari(g,veri){
+ if(["pending","assigned","pending_gorevli_review","pending_verification","pending_revision"].indexOf(g.durum)<0)return "";
+ if(S.hata)return '<div class="gorev-islemler"><p>Eski snapshot görüntüleniyor; panel yokken işlem yapılamaz.</p></div>';
+ var workers=gorevKisileri(veri,["isci"],false), reviewers=gorevKisileri(veri,["goreci"],false), admins=gorevKisileri(veri,["denetci"],false), html="";
+ if(g.durum==="pending"||g.durum==="pending_revision"){
+  var acanlar=gorevKisileri(veri,["denetci"],true);
+  if(acanlar.length&&workers.length)html+=gorevAksiyonFormu(g,veri,"ata","Atamayı kaydet",["denetci"],
+   acanlar[0],gorevFormKisi(veri,"kime","İşçi",["isci"],g.assignee,false,false)+
+   gorevFormKisi(veri,"gorevli","İlk kontrol (isteğe bağlı)",["goreci"],g.gorevli_kimlik||"",true,false),false);
+  if(workers.length&&(!g.assignee||workers.indexOf(g.assignee)>=0))
+   html+=gorevAksiyonFormu(g,veri,"al","Görevi üstlen",["isci"],g.assignee||workers[0],"",false);
+ }
+ if(g.durum==="assigned"&&workers.length){
+  html+=gorevAksiyonFormu(g,veri,"teslim","Teslim et",["isci"],g.assignee||workers[0],
+   '<label>Teslim notu<input name="not_" maxlength="2000" placeholder="Kısa sonuç özeti"></label>',false);
+ }
+ if(g.durum==="pending_gorevli_review"){
+  var reviewer=g.gorevli_kimlik&&reviewers.indexOf(g.gorevli_kimlik)>=0?[g.gorevli_kimlik]:[];
+  if(reviewer.length){
+   html+=gorevAksiyonFormu(g,veri,"ilk-kontrol","",["goreci"],reviewer[0],
+    '<label>İnceleme notu<input name="not_" maxlength="2000" placeholder="İsteğe bağlı"></label>'+
+    '<div class="gorev-kararlar"><button type="submit" name="revize" value="false">Onayla</button>'+
+    '<button type="submit" name="revize" value="true">Revize iste</button></div>',false);
+  }else html+='<p role="status">İlk kontrol görevlisi kayıtlı değil; işlem için görevli atamasını düzeltin.</p>';
+ }
+ if(g.durum==="pending_verification"&&admins.length){
+  var denetciAdaylari=admins.filter(function(k){
+   return !g.inceleyen_kimlik||k===g.inceleyen_kimlik||(veri.kullanicilar[k]||{}).bas_denetci===true;
+  });
+  if(!denetciAdaylari.length)html+='<p role="status">Görev belirli bir denetçiye yönlendirilmiş; o denetçi veya baş denetçi inceleyebilir.</p>';
+  else html+=gorevAksiyonFormu(g,veri,"denetle","",["denetci"],
+   denetciAdaylari.indexOf(g.inceleyen_kimlik)>=0?g.inceleyen_kimlik:denetciAdaylari[0],
+   '<label>İnceleme notu<input name="not_" maxlength="2000" placeholder="İsteğe bağlı"></label>'+
+   '<div class="gorev-kararlar"><button type="submit" name="revize" value="false">Onayla</button>'+
+   '<button type="submit" name="revize" value="true">Revize iste</button></div>',false,denetciAdaylari);
+ }
+ if(!html)html='<p role="status">Bu adım için uygun kayıtlı rol bulunamadı; görev durumu değişmedi.</p>';
+ return '<div class="gorev-islemler">'+html+'</div>';
 }
 
 function tahtaKartHtml(g,veri,st){
@@ -810,7 +1091,53 @@ function tahtaKartHtml(g,veri,st){
   '<div class="kim">'+esc(kisiAd(veri,g.kimden))+" → "+esc(g.assignee?kisiAd(veri,g.assignee):"—")+
   "</div>"+(st==="bilinmiyor"?'<div class="kim">Bilinmeyen durum: '+esc(g.durum||"Durum belirtilmemiş")+"</div>":"")+
   (g.gorevli_kimlik?'<div class="kim">İlk kontrol: '+esc(kisiAd(veri,g.gorevli_kimlik))+
-  '</div>':'')+'</div>';
+  '</div>':'')+gorevOlayGecmisiHtml(g)+gorevKartAksiyonlari(g,veri)+'</div>';
+}
+
+function gorevOlayGecmisiHtml(g){
+ if(!Array.isArray(g.gecmis))return '<p class="gorev-gecmis-bos">Görev geçmişi listesi kaydedilmemiş.</p>';
+ if(!g.gecmis.length)return '<p class="gorev-gecmis-bos">Kaydedilmiş görev olayı yok.</p>';
+ var bulunan=[],taranan=0;
+ for(var i=g.gecmis.length-1;i>=0&&bulunan.length<GOREV_OLAY_GOSTER_AZAMI&&taranan<50;i--,taranan++){
+  var x=g.gecmis[i];
+  if(x&&typeof x==="object"&&!Array.isArray(x))bulunan.push(x);
+ }
+ bulunan.reverse();
+ if(!bulunan.length)return '<p class="gorev-gecmis-bos">Görüntülenebilir görev olayı kaydı yok.</p>';
+ var id=String(g.id),acik=S.tahtaGecmisAcik[id]===true;
+ var olaylar=bulunan.map(function(x){
+  var rol=Object.prototype.hasOwnProperty.call(x,"rol")?x.rol:
+   (Object.prototype.hasOwnProperty.call(x,"role")?x.role:null);
+  var aktor=x.kimden==null?"Aktör kaydı yok":String(x.kimden);
+  var olay=x.olay==null?"Olay adı kaydedilmemiş":String(x.olay);
+  var zaman=x.ts==null?"Zaman kaydı yok":String(x.ts);
+  var rolMetni=rol==null?"rol kaydedilmemiş":String(rol);
+  var guven=x.actor_trust==null?"actor_trust kaydedilmemiş":String(x.actor_trust);
+  var not=x.not==null?"":String(x.not);
+  if(not.length>320)not=not.slice(0,320)+"…";
+  return '<li class="gorev-gecmis-olay"><div class="gorev-gecmis-ust"><strong>'+esc(olay)+
+   '</strong><span class="gorev-gecmis-zaman">'+esc(zaman)+'</span></div><div class="gorev-gecmis-meta">'+
+   'Aktör: '+esc(aktor)+' · rol: '+esc(rolMetni)+' · actor_trust: '+esc(guven)+'</div>'+ (not?'<p class="gorev-gecmis-not">'+
+   esc(not)+'</p>':"")+'</li>';
+ }).join("");
+ return '<details class="gorev-gecmis" data-tahta-gecmis="'+esc(id)+'"'+
+  (acik?' open':'')+'><summary data-tahta-focus="gorev-gecmis-'+esc(id)+'">Olay geçmişi · gösterilen '+
+  bulunan.length+' / toplam '+g.gecmis.length+'</summary><ol class="gorev-gecmis-olaylar" aria-label="Görev #'+
+  esc(id)+' olay zaman çizelgesi">'+olaylar+'</ol></details>';
+}
+
+function tahtaGecmisAciklariniOku(el){
+ Array.prototype.forEach.call(el.querySelectorAll('details[data-tahta-gecmis]'),function(detay){
+  S.tahtaGecmisAcik[detay.getAttribute("data-tahta-gecmis")]=detay.open;
+ });
+}
+
+function tahtaGecmisToggleBagla(el){
+ Array.prototype.forEach.call(el.querySelectorAll('details[data-tahta-gecmis]'),function(detay){
+  detay.addEventListener("toggle",function(){
+   S.tahtaGecmisAcik[detay.getAttribute("data-tahta-gecmis")]=detay.open;
+  });
+ });
 }
 
 function tahtaArsivKartlari(st){
@@ -834,10 +1161,15 @@ function tahtaArsivKartlari(st){
 }
 
 function tahtaRenderAnahtari(veri,gs){
- return JSON.stringify(gs.map(function(g){
+ return JSON.stringify([S.hata,Object.keys(veri.kullanicilar||{}).sort().map(function(k){
+  var u=veri.kullanicilar[k]||{};return [k,u.rol,u.bas_denetci];
+ }),gs.map(function(g){
+  var gecmis=Array.isArray(g.gecmis)?g.gecmis.slice(-50):g.gecmis;
   return [g.id,g.durum,g.baslik,g.kimden,kisiAd(veri,g.kimden),g.assignee,
-   kisiAd(veri,g.assignee),g.gorevli_kimlik,kisiAd(veri,g.gorevli_kimlik)];
- }));
+   kisiAd(veri,g.assignee),g.gorevli_kimlik,kisiAd(veri,g.gorevli_kimlik),
+   g.inceleyen_kimlik,kisiAd(veri,g.inceleyen_kimlik),gecmis,
+   Array.isArray(g.gecmis)?g.gecmis.length:null];
+ })]);
 }
 
 function tahtaOdakBilgisi(el){
@@ -875,6 +1207,7 @@ function tahtaArsivIcerikCiz(st){
  detay.innerHTML='<summary data-tahta-focus="arsiv-baslik-'+st+'">'+esc(DURUM_AD[st])+" ("+
   (S.veri.gorevler||[]).filter(function(g){return g.durum===st;}).length+
   ')</summary>'+tahtaArsivKartlari(st);
+ tahtaGecmisToggleBagla(detay);
  tahtaOdakGeriYukle(detay,once);
 }
 
@@ -883,14 +1216,17 @@ function tahtaCiz(veri){
  var anahtar=tahtaRenderAnahtari(veri,gs);
  if(anahtar===S.tahtaRenderAnahtari)return;
  var odak=tahtaOdakBilgisi(el);
+ tahtaGecmisAciklariniOku(el);
  tahtaArsivAciklariniOku(el);
  S.tahtaRenderAnahtari=anahtar;
+ var html=gorevEklePaneli(veri);
+ if(S.hata)html+='<div class="gorev-panel" role="status">Eski görev snapshot’ı gösteriliyor; görev değişiklikleri için panel bağlantısını geri yükleyin.</div>';
  if(!gs.length){
-  el.innerHTML='<div class="empty">henüz görev yok. Baş denetçi/görevli model:<br>'+
-   '<code>yuva gorev ekle "iş" --from sam --ata sus</code></div>';
+  html+='<div class="kol" style="grid-column:1/-1"><h3>Görevler</h3><div class="empty">'+
+   (S.hata?"Son snapshot’ta görev görünmüyor; güncel görev durumu doğrulanamıyor.":"Henüz görev yok. İlk görevi yukarıdaki formdan ekleyebilirsiniz.")+"</div></div>";
+  el.innerHTML=html;
   return;
  }
- var html="";
  TAHTA_AKTIF.forEach(function(st){
   var kol=gs.filter(function(g){return g.durum===st;});
   html+='<div class="kol"><h3 data-d="'+st+'">'+(DURUM_AD[st]||st)+" ("+kol.length+")</h3>";
@@ -909,6 +1245,7 @@ function tahtaCiz(veri){
    bilinmeyenler.map(function(g){return tahtaKartHtml(g,veri,"bilinmiyor");}).join("")+"</div>";
  }
  el.innerHTML=html;
+ tahtaGecmisToggleBagla(el);
  TAHTA_ARSIV.forEach(function(st){
   var detay=el.querySelector('details[data-tahta-arsiv="'+st+'"]');
   if(detay)detay.addEventListener("toggle",function(){
@@ -927,7 +1264,7 @@ function haritaGorevHtml(g,veri,ks,etiket,kompaktLegacy){
   (Object.prototype.hasOwnProperty.call(ks,g.assignee)?kisiAd(veri,g.assignee):g.assignee+" (kimlik eşleşmedi)");
  var atananKisi=ks[g.assignee]||{},atananMeta=atananKisi.arac||atananKisi.rol?
   ' · kimlik '+esc(g.assignee)+' · '+esc(atananKisi.arac||"araç belirtilmemiş")+' · '+
-  esc(ROL_AD[atananKisi.rol]||atananKisi.rol||"rol belirtilmemiş"):'';
+  esc(rolGorunen(atananKisi.rol)):'';
  var acanEtiket=g.kimden&&Object.prototype.hasOwnProperty.call(ks,g.kimden)?
   acan+' · '+g.kimden:acan;
  var gorevliEtiket=g.gorevli_kimlik&&Object.prototype.hasOwnProperty.call(ks,g.gorevli_kimlik)?
@@ -966,7 +1303,8 @@ function haritaEkipleriniBul(ks,denetciler){
 }
 
 function haritaKisiHtml(k,veri,ks,gs,ekip,denetciSecilebilir,ustBag,basDenetci){
- var v=ks[k]||{}, sinif=S.hata?"belirsiz":(v.online?"online":"offline");
+ var v=ks[k]||{}, sinif=S.hata||presenceBilinmiyor(v)?"belirsiz":
+  (onlineMi(v)?"online":presenceOffline(v)?"offline":"belirsiz");
  var sonKalp=v.son_kalp?goreli(v.son_kalp):"henüz kalp yok";
  var kalpTitle=v.son_kalp||"Henüz başarılı kalp alınmadı";
  var isci=v.rol==="isci", etkinlik="", etkinlikId="harita-etkinlik-"+kimId(k);
@@ -975,8 +1313,8 @@ function haritaKisiHtml(k,veri,ks,gs,ekip,denetciSecilebilir,ustBag,basDenetci){
   var durumEtiketleri=[
    {durum:"pending_revision",ad:"Revize bekliyor",sinif:"revize"},
    {durum:"pending_gorevli_review",ad:"Görevli ilk kontrolünde",sinif:"kontrol"},
-   {durum:"pending_verification",ad:"Teslim etti",sinif:"teslim"},
-   {durum:"assigned",ad:"İşi aldı",sinif:"alinan"}
+   {durum:"pending_verification",ad:"Yuva’da teslim edildi · inceleme bekliyor",sinif:"teslim"},
+   {durum:"assigned",ad:"Atandı",sinif:"alinan"}
   ];
   durumEtiketleri.forEach(function(x){
    var adet=atananIsler.filter(function(g){return g.durum===x.durum;}).length;
@@ -986,7 +1324,7 @@ function haritaKisiHtml(k,veri,ks,gs,ekip,denetciSecilebilir,ustBag,basDenetci){
   if(!etkinlik)etkinlik='<span class="harita-etkinlik">Boşta</span>';
   etkinlik='<div class="harita-kisi-etkinlik" id="'+esc(etkinlikId)+'">'+etkinlik+'</div>';
  }
- var rolAd=ROL_AD[v.rol]||v.rol||"belirtilmemiş", ekipEtiket=ekip?" · Ekip E"+ekip.numara:"";
+ var rolAd=rolGorunen(v.rol), ekipEtiket=ekip?" · Ekip E"+ekip.numara:"";
  var acilis=isci?' role="button" tabindex="0" aria-haspopup="dialog" data-h-isci="'+esc(k)+
   '" aria-controls="harita-detay" aria-describedby="'+esc(etkinlikId)+'" aria-label="'+
   esc((v.ad||k)+" ("+k+") · "+onlineEtiketi(v)+ekipEtiket+" · Rol: "+rolAd+" · işçi görev ayrıntılarını aç")+'"':
@@ -1021,7 +1359,7 @@ function haritaKisiHtml(k,veri,ks,gs,ekip,denetciSecilebilir,ustBag,basDenetci){
   ekipStil+ekipData+ustData+acilis+'><div class="harita-kisi-ust"><span class="harita-rozet '+sinif+'">'+
   esc(onlineEtiketi(v))+'</span>'+basDenetciRozet+ekipRozet+'<strong class="harita-kisi-ad">'+esc(v.ad||k)+'</strong></div>'+
   '<span class="harita-kimlik">'+esc(k)+'</span><div class="harita-kisi-alt"><div><b>Rol:</b> '+
-  esc(ROL_AD[v.rol]||v.rol||"belirtilmemiş")+' · <b>Araç:</b> '+esc(v.arac||"belirtilmemiş")+
+  esc(rolGorunen(v.rol))+' · <b>Araç:</b> '+esc(v.arac||"belirtilmemiş")+
   '</div><div><b>Son kalp:</b> <time title="'+esc(kalpTitle)+'">'+esc(sonKalp)+
   '</time></div></div>'+sorumluMetni+mobilBag+etkinlik+'</article>';
 }
@@ -1139,15 +1477,15 @@ function haritaDetayAc(k){
  var veri=S.veri||{}, ks=veri.kullanicilar||{}, v=ks[k]||{};
  var isler=(veri.gorevler||[]).filter(function(g){return g.assignee===k;});
  var gruplar=[
-  {ad:"Alınan",isler:isler.filter(function(g){return g.durum==="assigned";})},
+  {ad:"Atandı",isler:isler.filter(function(g){return g.durum==="assigned";})},
   {ad:"Görevli ilk kontrolünde",isler:isler.filter(function(g){return g.durum==="pending_gorevli_review";})},
-  {ad:"Teslim edilen",isler:isler.filter(function(g){return g.durum==="pending_verification";})},
+  {ad:"Yuva’da teslim edildi · inceleme bekliyor",isler:isler.filter(function(g){return g.durum==="pending_verification";})},
   {ad:"Revize bekleyen",isler:isler.filter(function(g){return g.durum==="pending_revision";})},
   {ad:"Geçmiş",isler:isler.filter(function(g){return ["verified","dropped"].indexOf(g.durum)>=0;})},
   {ad:"Diğer durumlar",isler:isler.filter(function(g){return ["assigned","pending_gorevli_review","pending_revision","pending_verification","verified","dropped"].indexOf(g.durum)<0;})}
  ];
  document.getElementById("harita-detay-ad").textContent=v.ad||k;
- document.getElementById("harita-detay-kimlik").textContent=k+" · "+(ROL_AD[v.rol]||v.rol||"rol belirtilmemiş");
+ document.getElementById("harita-detay-kimlik").textContent=k+" · "+rolGorunen(v.rol);
  document.getElementById("harita-detay-icerik").innerHTML=gruplar.map(function(g){
   return '<section class="harita-detay-grup"><h3>'+esc(g.ad)+' · '+g.isler.length+
    '</h3>'+(g.isler.length?g.isler.map(function(x){return haritaDetayGorevHtml(x,veri);}).join(""):
@@ -1160,7 +1498,8 @@ function haritaDetayAc(k){
 function haritaKimlikDurumunuGuncelle(el,ks){
  Array.prototype.forEach.call(el.querySelectorAll("[data-h-kisi]"),function(n){
   var k=n.getAttribute("data-h-kisi"), v=ks[k]||{};
-  var sinif=S.hata?"belirsiz":(v.online?"online":"offline");
+  var sinif=S.hata||presenceBilinmiyor(v)?"belirsiz":
+   (onlineMi(v)?"online":presenceOffline(v)?"offline":"belirsiz");
   if(!n.classList.contains(sinif)){
    ["online","offline","belirsiz"].forEach(function(s){n.classList.remove(s);});
    n.classList.add(sinif);
@@ -1769,11 +2108,13 @@ function haritaKlavye(ev){
  if(kart){ev.preventDefault();haritaDetayAc(kart.getAttribute("data-h-isci"));}
 }
 
-function ekranSecenekleri(ks,kimlikler){
+function ekranSecenekleri(ks,kimlikler,ekranlar){
  var html="";
  kimlikler.forEach(function(k){
   var v=ks[k];
-  html+='<option value="'+esc(k)+'">'+(S.hata?"⚪ ?":(onlineMi(v)?"🟢":"⚪"))+" "+esc(v.ad||k)+"</option>";
+  if(!v || !((ekranlar[k]||[]).length))return;
+  html+='<option value="'+esc(k)+'">'+esc(S.hata?
+   "⚪ panel bağlantısı doğrulanamıyor · "+(v.ad||k):onlineEtiketi(v)+" · "+(v.ad||k))+"</option>";
  });
  return html;
 }
@@ -1793,19 +2134,24 @@ function satirlarHtml(veri,satirlar,sade){
 function ekranCiz(veri,ks,kimlikler){
  var el=document.getElementById("b-ekran");
  var ekranlar=veri.ekranlar||{};
- if(S.gorunum!=="grid" && S.gorunum!=="akis" && !ks[S.gorunum])S.gorunum="grid";
- var ust='<div class="ekran-ust"><label class="ipucu">Görünüm:</label>'+
+ var ekranMeta=veri.ekranlar_meta||{};
+ var butceUyarisi=ekranMeta.partial===true&&!(veri.snapshot_meta&&veri.snapshot_meta.partial===true)?
+  '<span class="ipucu" role="status">⚠️ Ekran verisi kısmi; toplam dosya veya byte sınırında bazı kayıtlar gösterilmiyor.</span>':"";
+ if(S.gorunum!=="grid" && S.gorunum!=="akis" && !(ekranlar[S.gorunum]||[]).length)S.gorunum="grid";
+ var ust='<div class="ekran-ust"><b class="ekran-ust-baslik">Model akışları</b><span class="ipucu">Çalışma çıktıları · karta tıkla → ayrıntı</span><label class="ipucu">Görünüm:</label>'+
   '<select id="ekran-gorunum">'+
   '<option value="grid"'+(S.gorunum==="grid"?" selected":"")+">🗂️ Hepsi (yan yana)</option>"+
   '<option value="akis"'+(S.gorunum==="akis"?" selected":"")+">🧵 Birleşik akış</option>"+
-  ekranSecenekleri(ks,kimlikler)+
-  "</select><span class='ipucu'>pencereye tıkla → tam ekran</span>"+
+  ekranSecenekleri(ks,kimlikler,ekranlar)+
+  "</select>"+
+  butceUyarisi+
   (S.hata?"<span class='ipucu'>⚪ çevrimiçi durumu doğrulanamıyor</span>":"")+"</div>";
  var govde="";
 
  if(S.gorunum==="akis"){
   var hepsi=[];
   Object.keys(ekranlar).forEach(function(k){
+   if(!S.hata && kimlikler.indexOf(k)<0)return;
    (ekranlar[k]||[]).forEach(function(s){hepsi.push(s);});});
   hepsi.sort(function(a,b){return String(a.ts).localeCompare(String(b.ts));});
   govde=hepsi.length?satirlarHtml(veri,hepsi,false)
@@ -1815,7 +2161,7 @@ function ekranCiz(veri,ks,kimlikler){
   return;
  }
 
- if(S.gorunum!=="grid" && ks[S.gorunum]){
+ if(S.gorunum!=="grid" && (ekranlar[S.gorunum]||[]).length){
   var k=S.gorunum, v=ks[k], ss=ekranlar[k]||[];
   govde=ss.length?satirlarHtml(veri,ss,true)
    :'<div class="empty">henüz ekran yok — model <code>yuva ekran "..."</code> ile yazacak.</div>';
@@ -1829,43 +2175,48 @@ function ekranCiz(veri,ks,kimlikler){
   return;
  }
 
- // grid: her bağlı model için bir pencere (+ ekranı olan modeller)
+ // grid: yalnızca gerçek ekran çıktısı olan modeller için pencere göster.
  if(!kimlikler.length && !Object.keys(ekranlar).length){
   el.classList.remove("grid");
   el.innerHTML=ust+'<div class="empty">'+(S.hata?
    "⚠️ Panel verisine ulaşılamıyor; ekip ve ekran durumu doğrulanamıyor.":
-   "henüz model yok.")+"</div>";
+   "Henüz ekran kaydı yok.")+"</div>";
   return;
  }
- var kapaklar=[],gizli=[];
+ var kapaklar=Object.keys(ekranlar).filter(function(k){return (ekranlar[k]||[]).length>0&&(S.hata||kimlikler.indexOf(k)>=0);}),gizli=[];
  kimlikler.forEach(function(k){
-  var var_=S.hata||onlineMi(ks[k])||((ekranlar[k]||[]).length>0);
-  (var_?kapaklar:gizli).push(k);
+  if(kapaklar.indexOf(k)<0 && !onlineMi(ks[k]))gizli.push(k);
  });
- Object.keys(ekranlar).forEach(function(k){if(kapaklar.indexOf(k)<0)kapaklar.push(k);});
- if(S.ekranHepsi)gizli.slice().forEach(function(k){kapaklar.push(k);});
  var dipteler={};
  kapaklar.forEach(function(k){var e=document.getElementById("ekran-"+kimId(k));
   if(e)dipteler[k]=dipte(e,24);});
  var g="";
  kapaklar.forEach(function(k){
   var v=ks[k]||{}, ss=ekranlar[k]||[], on=onlineMi(v), durum=onlineEtiketi(v);
-  g+='<div class="pencere'+(on?" online":"")+'" data-buyut="'+esc(k)+'">'+
+  var son=ss.length?ss[ss.length-1]:null;
+  var sonIm=son?(son.tur==="komut"?"$ ":son.tur==="sonuc"?"→ ":son.tur==="baslik"?"## ":""):"";
+  var sonSatir=son?sonIm+String(son.satir||""):"Henüz çıktı yok.";
+  g+='<div class="pencere'+(on?" online":"")+'" data-buyut="'+esc(k)+'" title="Ayrıntılı akışı aç">'+
    '<div class="p-baslik"><span class="isik" style="color:'+(on?"#3fb950":"#8b949e")+'" title="'+
    durum+'">●</span><b>'+esc(v.ad||k)+'</b>'+
    '<span class="kimlik">'+esc(k)+"</span>"+
-   '<span class="ipucu">'+durum+" · "+esc(goreli(v.son_gorulme))+"</span></div>"+
+   '<span class="ipucu">'+durum+" · son hareket "+esc(goreli(son?son.ts:v.son_gorulme))+"</span></div>"+
+   '<div class="ekran-ozet"><div class="ekran-ozet-satir" title="'+esc(sonSatir)+'"><b>Son çıktı</b>'+esc(sonSatir)+"</div></div>"+
    '<pre class="p-icerik" id="ekran-'+kimId(k)+'">'+
    (ss.length?satirlarHtml(veri,ss,true):'<span class="ipucu">ekran boş — model bekleniyor…</span>')+
    "</pre></div>";
  });
  el.classList.add("grid");
  if(!kapaklar.length)g='<div class="empty" style="grid-column:1/-1">'+(S.hata?
-  "⚪ Bağlantı durumu doğrulanamıyor; son ekranda model kaydı görünmüyor.":
-  "🟢 şu an bağlı model yok — bir model bağlanınca ekranı burada açılır.")+"</div>";
- if(gizli.length)g+='<div class="katlanmis"><span>⚪ '+gizli.length+" çevrimdışı model"+
-  (S.ekranHepsi?" gösteriliyor":"in ekranı gizli")+'</span><button class="mini" id="ekran-hepsi">'+
-  (S.ekranHepsi?"▲ gizle":"▼ göster")+"</button></div>";
+  "⚪ Bağlantı durumu doğrulanamıyor; ekran kayıtları gösterilemiyor.":
+  "Henüz ekran kaydı yok.")+"</div>";
+ if(gizli.length){
+  var gizliOffline=gizli.filter(function(k){return presenceOffline(ks[k]);}).length;
+  var gizliUnknown=gizli.length-gizliOffline,gizliDurumlar=[];
+  if(gizliOffline)gizliDurumlar.push(gizliOffline+" doğrulanmış çevrimdışı");
+  if(gizliUnknown)gizliDurumlar.push(gizliUnknown+" durumu doğrulanamıyor");
+  g+='<div class="katlanmis"><span>⚪ '+gizli.length+" model akışı gizli · "+gizliDurumlar.join(" · ")+'</span></div>';
+ }
  el.innerHTML=ust+g;
  kapaklar.forEach(function(k){var e=document.getElementById("ekran-"+kimId(k));
   if(e && (dipteler[k]===undefined || dipteler[k]))e.scrollTop=e.scrollHeight;});
@@ -1912,6 +2263,42 @@ async function kisiGonder(yol,govde,mesajHata){
 }
 
 // ── olaylar ──────────────────────────────────────────────────────────
+document.getElementById("b-tahta").addEventListener("submit",async function(ev){
+ var form=ev.target.closest?ev.target.closest("form[data-task-op]"):null;
+ if(!form)return;
+ ev.preventDefault();
+ if(S.hata){serit("⚠️ Panel bağlantısı yok; eski snapshot üzerinden görev işlemi yapılamaz.");return;}
+ var op=form.getAttribute("data-task-op"), fd=new FormData(form), submitter=ev.submitter;
+ if(submitter&&submitter.name)fd.set(submitter.name,submitter.value);
+ var govde={islem:op,kimden:String(fd.get("kimden")||"").trim()};
+ if(op!=="ekle")govde.id=String(fd.get("id")||"");
+ if(op==="ekle"){
+  govde.baslik=String(fd.get("baslik")||"").trim();
+  govde.detay=String(fd.get("detay")||"").trim();
+  if(fd.get("ata"))govde.ata=String(fd.get("ata"));
+  if(fd.get("gorevli"))govde.gorevli=String(fd.get("gorevli"));
+ }else if(op==="ata"){
+  govde.kime=String(fd.get("kime")||"");
+  if(fd.get("gorevli"))govde.gorevli=String(fd.get("gorevli"));
+ }else if(op==="ilk-kontrol"||op==="denetle"){
+  var karar=fd.get("revize");
+  if(karar!=="true"&&karar!=="false"){
+   serit("⚠️ İnceleme kararı belirtilmedi; görev durumu değiştirilmedi.");return;
+  }
+  govde.revize=karar==="true";
+ }
+ var not=String(fd.get("not_")||"").trim();if(not)govde.not_=not;
+ var dugmeler=form.querySelectorAll('button[type="submit"]');
+ Array.prototype.forEach.call(dugmeler,function(b){b.disabled=true;});
+ var ok=await kisiGonder("/api/gorev",govde,"Görev işlemi reddedildi");
+ if(ok){
+  if(op==="ekle")form.reset();
+  await cek();
+  serit("✅ Görev işlemi Yuva’ya kaydedildi; otomatik dispatch yapılmadı.");
+ }
+ Array.prototype.forEach.call(dugmeler,function(b){b.disabled=false;});
+});
+
 document.getElementById("b-tahta").addEventListener("input",function(ev){
  var arama=ev.target.closest?ev.target.closest("input[data-tahta-arama]"):null;
  if(!arama)return;
@@ -1941,7 +2328,7 @@ document.getElementById("sekmeler").addEventListener("click",function(ev){
  S.sekme=b.getAttribute("data-s");
  document.body.classList.toggle("harita-tam",S.sekme==="harita");
  Array.prototype.forEach.call(document.querySelectorAll(".sekme"),function(x){
-  x.classList.toggle("aktif",x===b);});
+  x.classList.toggle("aktif",x===b);x.setAttribute("aria-pressed",x===b?"true":"false");});
  ["ekip","tahta","ekran","harita"].forEach(function(s){
   document.getElementById("b-"+s).classList.toggle("gizli",s!==S.sekme);});
  if(S.sekme==="harita")requestAnimationFrame(function(){haritaBaglariCiz();haritaAgacBaglariniCiz(document.getElementById("b-harita"));});
@@ -1982,28 +2369,37 @@ document.getElementById("b-ekran").addEventListener("click",function(ev){
  S.modal=p.getAttribute("data-buyut"); modalCiz(S.veri,S.veri.kullanicilar);
 });
 
-// ── sohbet: okundu / dürt / yeni mesaj ───────────────────────────────
+// ── sohbet: son_okuma kapsamı / hatırlatma / yeni mesaj ───────────────
 async function durt(mesajlar){
- if(S.hata){serit("⚪ Bağlantı durumu doğrulanamıyor; eski veriye göre çevrimiçi modellere hatırlatma gönderilmedi.");return;}
+ if(S.hata){serit("⚪ Eski Yuva snapshot’ı · panel bağlantı hatası; son_okuma kapsamı doğrulanamıyor, hatırlatma kaydı eklenmedi.");return;}
  var veri=S.veri||{}, ks=veri.kullanicilar||{};
- var hedefler={};
+ var hedefler={},offlineHedefler={},bilinmeyenHedefler={};
  mesajlar.forEach(function(m){
   hedefKisiler(m,veri).forEach(function(k){
    var v=ks[k]||{};
-   if(onlineMi(v)&&!okuduMu(v,m))hedefler[k]=m;
+   if(sonOkumaKapsar(v,m))return;
+   if(onlineMi(v))hedefler[k]=m;
+   else if(presenceOffline(v))offlineHedefler[k]=1;
+   else bilinmeyenHedefler[k]=1;
   });
  });
  var kimler=Object.keys(hedefler);
- if(!kimler.length){serit("okumayan çevrimiçi model yok — mesaj gelen kutularında bekliyor.");return;}
+ if(!kimler.length){
+  var not="Yuva son_okuma eşiği kapsam dışı olan ve presence çevrimiçi görünen hedef yok";
+  var offlineSayisi=Object.keys(offlineHedefler).length,bilinmeyenSayisi=Object.keys(bilinmeyenHedefler).length;
+  if(offlineSayisi)not+=" · "+offlineSayisi+" doğrulanmış çevrimdışı";
+  if(bilinmeyenSayisi)not+=" · "+bilinmeyenSayisi+" hedefin durumu doğrulanamıyor; hatırlatma gönderilmedi";
+  serit(not+".");return;
+ }
  var n=0;
  for(var i=0;i<kimler.length;i++){
   var k=kimler[i], v=ks[k]||{}, m=hedefler[k];
   var ok=await yaz({kimden:"kullanici",ad:"Kullanıcı",kime:"@"+(v.ad||k),tur:"soru",
-   metin:"🔔 Panelde seni bekleyen bir mesaj var: “"+String(m.metin||"").slice(0,140)+
-    "” — `yuva gelen --from "+k+"` ile bak ve panelden/`yuva yaz` ile yanıtla."});
+   metin:"🔔 Yuva sohbetinde sana hedeflenmiş bir mesaj var: “"+String(m.metin||"").slice(0,140)+
+    "” — son_okuma eşiği mesaj zamanını kapsamıyor; bu agent receipt’i değildir. `yuva gelen --from "+k+"` ile gelen kutusu kayıtlarını kontrol et."});
   if(ok)n++;
  }
- serit("🔔 "+n+" modele hatırlatma gönderildi.");
+ serit("🔔 Hatırlatma Yuva sohbetine "+n+" kayıt olarak eklendi; agent/session receipt doğrulanmadı.");
  cek();
 }
 
@@ -2101,15 +2497,19 @@ async function gonder(){
   var el=document.getElementById("sohbet");
   el.scrollTop=el.scrollHeight;S.yeni=0;
   if(online===null){
-   serit("✅ Mesaj gönderildi; panel verisi kesik olduğu için çevrimiçi hedef sayısı doğrulanamıyor.");
+   serit("✅ Mesaj Yuva sohbetine kaydedildi; panel bağlantısı nedeniyle Yuva presence hedef sayısı doğrulanamıyor.");
   }else if(!online){
-   serit("⚠️ şu an bağlı/çevrimiçi model yok — mesaj gelen kutularına düştü. "+
-    "Bir model `yuva gelen` dediğinde (veya panelde 🟢 yandığında) görecek; "+
-    "okundu bilgisi mesajın altında görünür.");
+   var cevrimdisiSayisi=Object.keys(ks).filter(function(k){return presenceOffline(ks[k]);}).length;
+   var bilinmeyenSayisi=Object.keys(ks).filter(function(k){return presenceBilinmiyor(ks[k]);}).length;
+   var bildirim="Yuva presence için doğrulanmış çevrimiçi hedef yok";
+   if(cevrimdisiSayisi)bildirim+=" · "+cevrimdisiSayisi+" doğrulanmış çevrimdışı";
+   if(bilinmeyenSayisi)bildirim+=" · "+bilinmeyenSayisi+" hedefin durumu doğrulanamıyor";
+   serit("✅ Mesaj Yuva sohbetine kaydedildi. "+bildirim+"; agent/session receipt doğrulanmadı.");
   }else if(kime==="@hepsi"){
-   serit("✅ "+online+" çevrimiçi modele iletildi — okundu bilgisi mesajın altında.");
+   serit("✅ Mesaj Yuva sohbetine kaydedildi. Yuva presence sayımı: "+online+
+    " çevrimiçi; agent/session receipt doğrulanmadı.");
   }else{
-   serit("✅ "+kime+" adresine iletildi — okundu bilgisi mesajın altında.");
+   serit("✅ Mesaj Yuva sohbetine kaydedildi; hedef: "+kime+". Agent/session receipt doğrulanmadı.");
   }
  }
  cek();

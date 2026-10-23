@@ -27,6 +27,12 @@ commit. Same ID/same request is a replay; same ID/changed request conflicts.
 - Uncertain append with no visible line, changed-body event ID, duplicate event
   ID, and malformed tail remain `delivery_unknown`; none authorizes blind
   append.
+- Post-replace directory descriptor close failure is classified
+  `CommitUnknown`; a lock descriptor close error after commit releases the lock,
+  and replay returns the same receipt without a second revision/event.
+- Partial audit append and readback I/O failure remain `delivery_unknown`;
+  retry does not append over a malformed tail or infer delivery from an
+  unavailable read.
 
 ## Verification
 
@@ -34,7 +40,7 @@ commit. Same ID/same request is a replay; same ID/changed request conflicts.
 PYTHONDONTWRITEBYTECODE=1 python3 prototypes/panel-admin-outbox/run_fixture.py
 ```
 
-All 5 grouped fixture scenarios passed with bytecode generation disabled.
+All 7 grouped fixture scenarios passed with bytecode generation disabled.
 Output is aggregate-only; temporary paths and synthetic record bodies are not
 printed. The fixture directory contains only `admin_outbox.py`,
 `run_fixture.py`, and `README.md`.

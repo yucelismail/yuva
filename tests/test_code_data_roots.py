@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
@@ -57,22 +58,18 @@ class CodeDataRootTests(unittest.TestCase):
              "--port", "8765"])
         self.assertEqual(os.environ["YUVA_DIR"], str(self.data_root))
 
-    def test_panel_uses_candidate_cli_and_shared_data_for_task_subprocess(self):
-        live_cli_decoy = self.data_root / "bin" / "yuva"
-        live_cli_decoy.parent.mkdir(parents=True)
-        live_cli_decoy.write_text("data-root CLI decoy", encoding="utf-8")
+    def test_panel_local_mvp_task_write_records_unverified_actor_label(self):
         panel = load_module("yuva_roots_panel_cli", PANEL_PATH)
-        completed = SimpleNamespace(returncode=0, stdout="ok", stderr="")
 
-        with patch.object(panel.subprocess, "run", return_value=completed) as run:
-            result = panel.gorev_calistir({
-                "islem": "teslim", "id": 107, "kimden": "agent2"})
+        with patch.dict(os.environ, {"YUVA_AUTH_ENABLED": "0"}):
+            status, result = panel.gorev_calistir({
+                "islem": "ekle", "baslik": "fixture local task",
+                "kimden": "local-worker"})
 
-        self.assertEqual(result[0], 200)
-        argv, = run.call_args.args
-        self.assertEqual(argv[1], str(CLI_PATH))
-        self.assertEqual(run.call_args.kwargs["env"]["YUVA_DIR"],
-                         str(self.data_root))
+        self.assertEqual(status, 200, result)
+        task = json.loads((self.data_root / "gorevler.json").read_text())["gorevler"][0]
+        self.assertEqual(task["kimden"], "local-worker")
+        self.assertEqual(task["gecmis"][0]["actor_trust"], "local_unverified")
 
     def test_panel_reads_ui_from_code_root_not_shared_data_root(self):
         panel = load_module("yuva_roots_panel_ui", PANEL_PATH)

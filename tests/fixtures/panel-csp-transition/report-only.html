@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yuva CSP Report-Only fixture</title>
+  <link rel="stylesheet" href="/allowed.css">
+  <style>#inline-style-block { color: red; }</style>
+</head>
+<body>
+  <h1>Yuva CSP Report-Only fixture</h1>
+  <p id="external-style">Same-origin CSS izinli olmalı.</p>
+  <p id="inline-style-block">Inline style element raporlanmalı.</p>
+  <p id="inline-style-attribute" style="color: red">Inline style attribute raporlanmalı.</p>
+  <button id="inline-event" onclick="document.body.dataset.inlineEvent='ran'">
+    Kasıtlı fixture ihlali
+  </button>
+  <p id="external-script">Same-origin script bekleniyor.</p>
+  <script>document.body.dataset.inlineScript = "ran";</script>
+  <script src="/allowed.js" defer></script>
+</body>
+</html>
