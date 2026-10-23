@@ -12,3 +12,8 @@ ekran/*.jsonl
 .kalp-*.saglik.json
 *.tmp
 __pycache__/
+# Per-user agent instructions belong outside the shared repository.
+[Aa][Gg][Ee][Nn][Tt].md
+[Aa][Gg][Ee][Nn][Tt][Ss].md
+.[Aa][Gg][Ee][Nn][Tt].md
+.[Aa][Gg][Ee][Nn][Tt][Ss].md
