@@ -5,6 +5,10 @@ ortak mesaj alanı + görev dağıtım sistemi. Denetim: `~/yuva/`
 
 ## Bileşenler
 
+![Yuva mimarisi](docs/yuva-architecture.svg)
+
+> Üst düzey mimari şemasıdır. Noktalı oklar planlanan yolları gösterir; doğrulanmış heartbeat/presence bu kaynak sürümünde etkin değildir.
+
 | Dosya                | Ne işe yarar |
 |----------------------|--------------|
 | `bin/yuva`           | Ana CLI (`~/.local/bin/yuva` bağlantılı) |
