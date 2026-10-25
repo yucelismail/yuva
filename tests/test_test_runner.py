@@ -16,6 +16,44 @@ SPEC.loader.exec_module(test_runner)
 
 
 class TestRunnerTests(unittest.TestCase):
+    def test_every_repository_test_module_is_in_the_discovered_suite(self):
+        expected = test_runner._expected_test_modules(
+            test_runner.TESTS_ROOT, ROOT)
+        suite = test_runner.unittest.TestLoader().discover(
+            start_dir=str(test_runner.TESTS_ROOT),
+            pattern=test_runner.TEST_PATTERN, top_level_dir=str(ROOT))
+        discovered = test_runner._discovered_test_modules(suite)
+
+        self.assertGreater(len(expected), 0)
+        self.assertEqual(discovered, expected)
+
+    def test_omitted_test_module_fails_before_partial_suite_can_pass(self):
+        class PresentFixture(unittest.TestCase):
+            def test_present(self):
+                self.assertTrue(True)
+
+        PresentFixture.__module__ = "test_fixture_present"
+        with tempfile.TemporaryDirectory(prefix="yuva-omitted-tests-") as temp:
+            tests = Path(temp) / "tests"
+            tests.mkdir()
+            (tests / "test_fixture_present.py").write_text("", encoding="utf-8")
+            (tests / "test_fixture_omitted.py").write_text("", encoding="utf-8")
+            output = io.StringIO()
+            error = io.StringIO()
+
+            with patch.object(test_runner.unittest.TestLoader, "discover",
+                              return_value=unittest.TestSuite([
+                                  PresentFixture("test_present")])) as discover, \
+                    redirect_stderr(error):
+                status = test_runner.main(start_dir=tests, stream=output)
+
+        self.assertEqual(discover.call_count, 1)
+        self.assertEqual(status, 2)
+        self.assertIn("test discovery omitted module(s): test_fixture_omitted",
+                      error.getvalue())
+        self.assertNotIn("Ran ", output.getvalue())
+        self.assertNotIn("OK", output.getvalue())
+
     def test_repository_discovery_uses_repository_root_for_imports(self):
         output = io.StringIO()
         with patch.object(test_runner.unittest.TestLoader, "discover",

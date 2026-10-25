@@ -45,6 +45,31 @@ def _failed_test_placeholder_count(suite) -> int:
     return count
 
 
+def _discovered_test_modules(suite):
+    """Return source module names represented by collected test cases."""
+    modules = set()
+    for test in suite:
+        if isinstance(test, unittest.TestSuite):
+            modules.update(_discovered_test_modules(test))
+        else:
+            modules.add(test.__class__.__module__)
+    return modules
+
+
+def _expected_test_modules(start_dir, top_level_dir=None):
+    """Inventory every test-pattern file that repository discovery should load."""
+    start = Path(start_dir).resolve()
+    top = Path(top_level_dir).resolve() if top_level_dir is not None else start
+    modules = set()
+    for path in start.rglob(TEST_PATTERN):
+        try:
+            relative = path.resolve().relative_to(top)
+        except ValueError:
+            continue
+        modules.add(".".join(relative.with_suffix("").parts))
+    return modules
+
+
 def main(*, start_dir: Path = TESTS_ROOT,
          top_level_dir: Optional[Path] = None, stream=None) -> int:
     """Discover and run tests; return non-zero for errors or zero tests."""
@@ -77,6 +102,16 @@ def main(*, start_dir: Path = TESTS_ROOT,
         if count == 0:
             print(
                 f"test discovery found zero tests (pattern {TEST_PATTERN})",
+                file=sys.stderr,
+            )
+            return 2
+
+        expected_modules = _expected_test_modules(start_dir, discovery_root)
+        discovered_modules = _discovered_test_modules(suite)
+        missing_modules = sorted(expected_modules - discovered_modules)
+        if missing_modules:
+            print(
+                "test discovery omitted module(s): " + ", ".join(missing_modules),
                 file=sys.stderr,
             )
             return 2
