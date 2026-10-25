@@ -33,17 +33,17 @@ jobs:
       - name: Check Python source syntax
         run: PYTHONDONTWRITEBYTECODE=1 python scripts/check_python_syntax.py
 
-      - name: Set up Python 3.8 for minimum-version unittest
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.8"
-
       - name: Run CLI/panel task acceptance discovery
         run: |
           PYTHONDONTWRITEBYTECODE=1 python -m unittest -v \
             tests.test_task_assignment_ephemeral_http \
             tests.test_task_ledger_integrity \
             tests.test_task_board_live_update_consistency_fixture
+
+      - name: Set up Python 3.8 for minimum-version unittest
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.8"
 
       - name: Run unittest suite on Python 3.8
         run: PYTHONDONTWRITEBYTECODE=1 python scripts/run_tests.py
